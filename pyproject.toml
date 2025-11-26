@@ -5,6 +5,7 @@ build-backend = "maturin"
 [project]
 name = "aerofs"
 version = "0.1.0"
+readme = "README.md"
 description = "High-Performance Asynchronous File I/O for Python, powered by Rust"
 authors = [
     {name = "ohmyarthur", email = "cp@hylcyn.xyz"}
@@ -27,6 +28,7 @@ classifiers = [
 ]
 keywords = ["async", "file", "io", "rust", "tokio", "performance"]
 license = {text = "Apache-2.0"}
+license-files = ["LICENSE"]
 
 [project.urls]
 Homepage = "https://github.com/ohmyarthur/aerofs"
