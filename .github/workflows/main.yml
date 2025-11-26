@@ -198,7 +198,7 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'workflow_dispatch'
     permissions:
-      id-token: write  # Required for trusted publishing to PyPI
+      id-token: write
       contents: read
     
     steps:

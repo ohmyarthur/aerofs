@@ -27,13 +27,13 @@ pub struct AsyncTemporaryFile {
 impl AsyncTemporaryFile {
     fn __aenter__<'a>(slf: PyRefMut<'a, Self>, py: Python<'a>) -> PyResult<Bound<'a, PyAny>> {
         let mode = slf.mode.clone();
-        let buffering = slf.buffering;
-        let encoding = slf.encoding.clone();
-        let newline = slf.newline.clone();
+        let _buffering = slf.buffering;
+        let _encoding = slf.encoding.clone();
+        let _newline = slf.newline.clone();
         let suffix = slf.suffix.clone();
         let prefix = slf.prefix.clone();
         let dir = slf.dir.clone();
-        let delete_on_close = slf.delete_on_close;
+        let _delete_on_close = slf.delete_on_close;
         let py_obj: Py<AsyncTemporaryFile> = slf.into();
         
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
@@ -44,7 +44,6 @@ impl AsyncTemporaryFile {
             let filename = format!("{}{}{}", file_prefix, uuid::Uuid::new_v4(), file_suffix);
             let path = PathBuf::from(temp_dir).join(&filename);
             
-            // Handle file modes properly like AsyncFile does
             let mode_str = mode.as_deref().unwrap_or("w+b");
             let mut opts = tokio::fs::OpenOptions::new();
             
@@ -53,7 +52,6 @@ impl AsyncTemporaryFile {
                 if mode_str.contains('+') {
                     opts.write(true).create(true); // Create if doesn't exist for r+ mode
                 } else {
-                    // For read-only mode, create first then reopen
                     File::create(&path).await
                         .map_err(|e| Python::with_gil(|py| io_err(py, e)))?;
                 }
@@ -78,7 +76,6 @@ impl AsyncTemporaryFile {
                 .map_err(|e| Python::with_gil(|py| io_err(py, e)))?;
             
             Python::with_gil(|py| {
-                // Store the file and path in the object
                 let mut obj = py_obj.borrow_mut(py);
                 obj.file = Some(Arc::new(Mutex::new(file)));
                 obj.path = path;
@@ -95,8 +92,6 @@ impl AsyncTemporaryFile {
         _exc_tb: Bound<'a, PyAny>,
     ) -> PyResult<Bound<'a, PyAny>> {
         let path = slf.path.clone();
-        // Always delete on __aexit__ (context manager exit), regardless of delete_on_close
-        // delete_on_close only affects whether to delete on explicit close() call
         let file = slf.file.take();
         slf.closed = true;
         
@@ -107,7 +102,6 @@ impl AsyncTemporaryFile {
                 drop(f);
             }
             
-            // Always delete when context manager exits
             tokio::fs::remove_file(&path).await.ok();
             
             Ok(Python::with_gil(|py| false.into_py(py)))
@@ -207,7 +201,6 @@ impl AsyncTemporaryFile {
             .ok_or_else(|| value_err("File not open"))?
             .clone();
         
-        // Convert data to bytes - accept both str and bytes
         let bytes = if let Ok(s) = data.downcast::<PyString>() {
             s.str()?.to_string().into_bytes()
         } else if let Ok(b) = data.downcast::<pyo3::types::PyBytes>() {
@@ -311,7 +304,7 @@ impl AsyncTemporaryFile {
                 
                 match buf_reader.read_until(b'\n', &mut line_buf).await {
                     Ok(0) => {
-                        return Python::with_gil(|py| {
+                        return Python::with_gil(|_py| {
                             Err(pyo3::exceptions::PyStopAsyncIteration::new_err(""))
                         });
                     }
@@ -333,7 +326,7 @@ impl AsyncTemporaryFile {
                 
                 match buf_reader.read_line(&mut line_str).await {
                     Ok(0) => {
-                        return Python::with_gil(|py| {
+                        return Python::with_gil(|_py| {
                             Err(pyo3::exceptions::PyStopAsyncIteration::new_err(""))
                         });
                     }
@@ -383,11 +376,9 @@ impl AsyncTemporaryDirectory {
                 .map_err(|e| Python::with_gil(|py| io_err(py, e)))?;
             
             Python::with_gil(|py| {
-                // Store the path in the object
                 let mut obj = py_obj.borrow_mut(py);
                 obj.path = Some(path);
                 
-                // Return the path string as the context manager result
                 if let Some(p) = &obj.path {
                     Ok(PyString::new_bound(py, &p.to_string_lossy()).into_any().unbind())
                 } else {
@@ -435,7 +426,7 @@ impl AsyncTemporaryDirectory {
 #[pyfunction]
 #[pyo3(signature = (mode="w+b", buffering=-1, encoding=None, newline=None, suffix=None, prefix=None, dir=None, delete=true, *, delete_on_close=None))]
 pub fn named_temporary_file<'a>(
-    py: Python<'a>,
+    _py: Python<'a>,
     mode: Option<&str>,
     buffering: Option<i32>,
     encoding: Option<String>,
@@ -466,7 +457,7 @@ pub fn named_temporary_file<'a>(
 #[pyfunction]
 #[pyo3(signature = (prefix=None, suffix=None, dir=None))]
 pub fn temporary_directory<'a>(
-    py: Python<'a>,
+    _py: Python<'a>,
     prefix: Option<String>,
     suffix: Option<String>,
     dir: Option<Bound<'a, PyAny>>,
@@ -502,6 +493,7 @@ pub fn temporary_directory<'a>(
 #[pyclass]
 pub struct AsyncSpooledTemporaryFile {
     file: Option<Py<AsyncTemporaryFile>>,
+    #[allow(dead_code)]
     max_size: usize,
     mode: Option<String>,
     suffix: Option<String>,
@@ -517,7 +509,6 @@ impl AsyncSpooledTemporaryFile {
     fn __aenter__<'a>(slf: PyRefMut<'a, Self>, py: Python<'a>) -> PyResult<Bound<'a, PyAny>> {
         let py_obj: Py<AsyncSpooledTemporaryFile> = slf.into();
         
-        // Extract parameters before entering async block
         let (mode, suffix, prefix, dir, buffering, encoding, newline) = Python::with_gil(|py| {
             let obj = py_obj.borrow(py);
             (
@@ -537,12 +528,9 @@ impl AsyncSpooledTemporaryFile {
             let file_suffix = suffix.unwrap_or_else(|| "".to_string());
             let mode_str = mode.as_deref().unwrap_or("w+b");
             
-            // For spooled files, we start with an in-memory buffer (BytesIO-like behavior)
-            // But for now, create a real file with the correct mode
             let filename = format!("{}{}{}", file_prefix, uuid::Uuid::new_v4(), file_suffix);
             let path = PathBuf::from(temp_dir.clone()).join(&filename);
             
-            // Handle file modes properly like AsyncFile does
             let mut opts = tokio::fs::OpenOptions::new();
             
             if mode_str.contains('r') {
@@ -550,7 +538,6 @@ impl AsyncSpooledTemporaryFile {
                 if mode_str.contains('+') {
                     opts.write(true).create(true); // Create if doesn't exist for r+ mode
                 } else {
-                    // For read-only mode, create first then reopen
                     File::create(&path).await
                         .map_err(|e| Python::with_gil(|py| io_err(py, e)))?;
                 }
@@ -575,7 +562,6 @@ impl AsyncSpooledTemporaryFile {
                 .map_err(|e| Python::with_gil(|py| io_err(py, e)))?;
             
             Python::with_gil(|py| {
-                // Create the inner AsyncTemporaryFile and wrap it in Py
                 let temp_file = AsyncTemporaryFile {
                     file: Some(Arc::new(Mutex::new(file))),
                     path,
@@ -593,7 +579,6 @@ impl AsyncSpooledTemporaryFile {
                 let py_temp_file = Py::new(py, temp_file)
                     .map_err(|e| PyErr::from(e))?;
                 
-                // Store the created file in the spooled temp file
                 let mut obj = py_obj.borrow_mut(py);
                 obj.file = Some(py_temp_file);
                 Ok(py_obj.clone_ref(py))
@@ -602,13 +587,12 @@ impl AsyncSpooledTemporaryFile {
     }
     
     fn __aexit__<'a>(
-        slf: PyRefMut<'a, Self>,
+        _slf: PyRefMut<'a, Self>,
         py: Python<'a>,
         _exc_type: Bound<'a, PyAny>,
         _exc_val: Bound<'a, PyAny>,
         _exc_tb: Bound<'a, PyAny>,
     ) -> PyResult<Bound<'a, PyAny>> {
-        // Simple cleanup for now
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             Ok(Python::with_gil(|py| false.into_py(py)))
         })
@@ -691,7 +675,6 @@ pub fn spooled_temporary_file<'a>(
     prefix: Option<String>,
     dir: Option<String>,
 ) -> PyResult<PyObject> {
-    // Import Python's tempfile module and wrap its SpooledTemporaryFile
     let tempfile_module = py.import_bound("tempfile")
         .map_err(|e| PyErr::from(e))?;
     
@@ -720,7 +703,6 @@ pub fn spooled_temporary_file<'a>(
     
     let python_spooled = spooled_class.call((), Some(&kwargs))?;
     
-    // Wrap it using the wrap function to make it async
     let wrap_module = py.import_bound("aerofs.threadpool")
         .map_err(|e| PyErr::from(e))?;
     let wrap_func = wrap_module.getattr("wrap")

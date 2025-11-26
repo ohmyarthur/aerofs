@@ -9,7 +9,6 @@ fn path_to_string(path: &Bound<'_, PyAny>) -> PyResult<String> {
     if let Ok(s) = path.downcast::<PyString>() {
         Ok(s.str()?.to_string())
     } else {
-        // Try to convert PathLike objects to string
         if let Ok(has_fspath) = path.hasattr("__fspath__") {
             if has_fspath {
                 let fspath_result = path.call_method0("__fspath__")?;
@@ -31,27 +30,11 @@ fn path_to_string(path: &Bound<'_, PyAny>) -> PyResult<String> {
 pub fn stat<'a>(py: Python<'a>, path: Bound<'a, PyAny>) -> PyResult<Bound<'a, PyAny>> {
     let path_str = path_to_string(&path)?;
     pyo3_async_runtimes::tokio::future_into_py(py, async move {
-        let metadata = fs::metadata(&path_str).await
+        let _metadata = fs::metadata(&path_str).await
             .map_err(|e| Python::with_gil(|py| os_err(py, e)))?;
         
         Python::with_gil(|py| {
             let os_module = py.import_bound("os")?;
-            let stat_result = os_module.getattr("stat_result")?;
-            
-            let values = (
-                metadata.len(),  
-                0u64,            
-                0u64,            
-                0u64,            
-                0u64,            
-                0u64,            
-                0u64,            
-                metadata.len(),  
-                metadata.accessed().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_secs()).unwrap_or(0),  
-                metadata.modified().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_secs()).unwrap_or(0),   
-                metadata.created().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_secs()).unwrap_or(0),    
-            );
-            
             let result = os_module.call_method1("stat", (&path_str,))?;
             Ok(result.unbind())
         })
@@ -161,13 +144,11 @@ pub fn access<'a>(py: Python<'a>, path: Bound<'a, PyAny>, mode: i32) -> PyResult
     pyo3_async_runtimes::tokio::future_into_py(py, async move {
         let metadata = fs::metadata(&path_str).await;
         
-        // Mode 0 just checks existence
         if mode == 0 {
             let exists = metadata.is_ok();
             return Ok(Python::with_gil(|py| exists.into_py(py)));
         }
         
-        // For other modes, if file doesn't exist, return False
         let metadata = match metadata {
             Ok(meta) => meta,
             Err(_) => return Ok(Python::with_gil(|py| false.into_py(py))),
@@ -190,7 +171,6 @@ pub fn access<'a>(py: Python<'a>, path: Bound<'a, PyAny>, mode: i32) -> PyResult
         
         #[cfg(not(unix))]
         {
-            // On non-Unix systems, just check if file exists for simplicity
             Ok(Python::with_gil(|py| true.into_py(py)))
         }
     })
@@ -230,7 +210,6 @@ impl AsyncDirEntry {
 pub fn scandir<'a>(py: Python<'a>, path: Option<String>) -> PyResult<Bound<'a, PyAny>> {
     let path_str = path.unwrap_or_else(|| ".".to_string());
     pyo3_async_runtimes::tokio::future_into_py(py, async move {
-        // Check if path exists first
         let metadata = tokio::fs::metadata(&path_str).await
             .map_err(|e| {
                 Python::with_gil(|py| {
@@ -242,9 +221,8 @@ pub fn scandir<'a>(py: Python<'a>, path: Option<String>) -> PyResult<Bound<'a, P
                 })
             })?;
         
-        // Check if it's a directory
         if !metadata.is_dir() {
-            return Err(Python::with_gil(|py| {
+            return Err(Python::with_gil(|_py| {
                 pyo3::exceptions::PyNotADirectoryError::new_err(format!("[Errno 20] Not a directory: '{}'", path_str))
             }));
         }
@@ -318,7 +296,6 @@ pub fn rmdir<'a>(py: Python<'a>, path: String) -> PyResult<Bound<'a, PyAny>> {
 pub fn listdir<'a>(py: Python<'a>, path: Option<String>) -> PyResult<Bound<'a, PyAny>> {
     let path_str = path.unwrap_or_else(|| ".".to_string());
     pyo3_async_runtimes::tokio::future_into_py(py, async move {
-        // Check if path exists first
         let metadata = tokio::fs::metadata(&path_str).await
             .map_err(|e| {
                 Python::with_gil(|py| {
@@ -330,9 +307,8 @@ pub fn listdir<'a>(py: Python<'a>, path: Option<String>) -> PyResult<Bound<'a, P
                 })
             })?;
         
-        // Check if it's a directory
         if !metadata.is_dir() {
-            return Err(Python::with_gil(|py| {
+            return Err(Python::with_gil(|_py| {
                 pyo3::exceptions::PyNotADirectoryError::new_err(format!("[Errno 20] Not a directory: '{}'", path_str))
             }));
         }
@@ -474,7 +450,6 @@ mod path {
     #[pyfunction]
     pub fn ismount<'a>(py: Python<'a>, path: String) -> PyResult<Bound<'a, PyAny>> {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            // Delegate to Python's os.path.ismount
             Python::with_gil(|py| {
                 let os_path = py.import_bound("os.path")?;
                 let result = os_path.call_method1("ismount", (&path,))?;
@@ -486,7 +461,6 @@ mod path {
     #[pyfunction]
     pub fn samefile<'a>(py: Python<'a>, path1: String, path2: String) -> PyResult<Bound<'a, PyAny>> {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            // Delegate to Python's os.path.samefile
             Python::with_gil(|py| {
                 let os_path = py.import_bound("os.path")?;
                 let result = os_path.call_method1("samefile", (&path1, &path2))?;
@@ -498,7 +472,6 @@ mod path {
     #[pyfunction]
     pub fn sameopenfile<'a>(py: Python<'a>, fd1: i32, fd2: i32) -> PyResult<Bound<'a, PyAny>> {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            // Delegate to Python's os.path.sameopenfile
             Python::with_gil(|py| {
                 let os_path = py.import_bound("os.path")?;
                 let result = os_path.call_method1("sameopenfile", (fd1, fd2))?;
@@ -512,7 +485,6 @@ mod path {
 #[pyfunction]
 pub fn statvfs<'a>(py: Python<'a>, path: String) -> PyResult<Bound<'a, PyAny>> {
     pyo3_async_runtimes::tokio::future_into_py(py, async move {
-        // Delegate to Python's os.statvfs
         Python::with_gil(|py| {
             let os_module = py.import_bound("os")?;
             let result = os_module.call_method1("statvfs", (&path,))?;
@@ -526,7 +498,6 @@ pub fn statvfs<'a>(py: Python<'a>, path: String) -> PyResult<Bound<'a, PyAny>> {
 #[pyo3(signature = (out_fd, in_fd, offset, count))]
 pub fn sendfile<'a>(py: Python<'a>, out_fd: i32, in_fd: i32, offset: Option<i64>, count: i64) -> PyResult<Bound<'a, PyAny>> {
     pyo3_async_runtimes::tokio::future_into_py(py, async move {
-        // Delegate to Python's os.sendfile
         Python::with_gil(|py| {
             let os_module = py.import_bound("os")?;
             let result = if let Some(off) = offset {
