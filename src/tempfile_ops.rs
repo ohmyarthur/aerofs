@@ -37,7 +37,7 @@ impl AsyncTemporaryFile {
         let py_obj: Py<AsyncTemporaryFile> = slf.into();
         
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let temp_dir = dir.unwrap_or_else(|| "/tmp".to_string());
+            let temp_dir = dir.unwrap_or_else(|| crate::utils::get_temp_dir());
             let file_prefix = prefix.unwrap_or_else(|| "tmp".to_string());
             let file_suffix = suffix.unwrap_or_else(|| "".to_string());
             
@@ -46,31 +46,7 @@ impl AsyncTemporaryFile {
             
             let mode_str = mode.as_deref().unwrap_or("w+b");
             let mut opts = tokio::fs::OpenOptions::new();
-            
-            if mode_str.contains('r') {
-                opts.read(true);
-                if mode_str.contains('+') {
-                    opts.write(true).create(true); // Create if doesn't exist for r+ mode
-                } else {
-                    File::create(&path).await
-                        .map_err(|e| Python::with_gil(|py| io_err(py, e)))?;
-                }
-            }
-            if mode_str.contains('w') {
-                opts.write(true).create(true).truncate(true);
-                if mode_str.contains('+') {
-                    opts.read(true);
-                }
-            }
-            if mode_str.contains('a') {
-                opts.write(true).create(true).append(true);
-                if mode_str.contains('+') {
-                    opts.read(true);
-                }
-            }
-            if mode_str.contains('x') {
-                opts.write(true).create_new(true);
-            }
+            crate::utils::configure_file_options_async(&mut opts, mode_str, true)?;
             
             let file = opts.open(&path).await
                 .map_err(|e| Python::with_gil(|py| io_err(py, e)))?;
@@ -365,7 +341,7 @@ impl AsyncTemporaryDirectory {
         let py_obj: Py<AsyncTemporaryDirectory> = slf.into();
         
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let temp_dir = dir.unwrap_or_else(|| "/tmp".to_string());
+            let temp_dir = dir.unwrap_or_else(|| crate::utils::get_temp_dir());
             let dir_prefix = prefix.unwrap_or_else(|| "tmp".to_string());
             let dir_suffix = suffix.unwrap_or_else(|| "".to_string());
             
@@ -441,7 +417,7 @@ pub fn named_temporary_file<'a>(
     
     Ok(AsyncTemporaryFile {
         file: None,
-        path: PathBuf::from("/tmp/placeholder"), // Will be set in __aenter__
+        path: PathBuf::from(crate::utils::get_temp_dir()).join("placeholder"),
         delete_on_close: delete_flag,
         closed: false,
         mode: mode.map(|s| s.to_string()),
@@ -523,7 +499,7 @@ impl AsyncSpooledTemporaryFile {
         });
         
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let temp_dir = dir.unwrap_or_else(|| "/tmp".to_string());
+            let temp_dir = dir.unwrap_or_else(|| crate::utils::get_temp_dir());
             let file_prefix = prefix.unwrap_or_else(|| "tmp".to_string());
             let file_suffix = suffix.unwrap_or_else(|| "".to_string());
             let mode_str = mode.as_deref().unwrap_or("w+b");
@@ -532,31 +508,7 @@ impl AsyncSpooledTemporaryFile {
             let path = PathBuf::from(temp_dir.clone()).join(&filename);
             
             let mut opts = tokio::fs::OpenOptions::new();
-            
-            if mode_str.contains('r') {
-                opts.read(true);
-                if mode_str.contains('+') {
-                    opts.write(true).create(true); // Create if doesn't exist for r+ mode
-                } else {
-                    File::create(&path).await
-                        .map_err(|e| Python::with_gil(|py| io_err(py, e)))?;
-                }
-            }
-            if mode_str.contains('w') {
-                opts.write(true).create(true).truncate(true);
-                if mode_str.contains('+') {
-                    opts.read(true);
-                }
-            }
-            if mode_str.contains('a') {
-                opts.write(true).create(true).append(true);
-                if mode_str.contains('+') {
-                    opts.read(true);
-                }
-            }
-            if mode_str.contains('x') {
-                opts.write(true).create_new(true);
-            }
+            crate::utils::configure_file_options_async(&mut opts, mode_str, true)?;
             
             let file = opts.open(&path).await
                 .map_err(|e| Python::with_gil(|py| io_err(py, e)))?;

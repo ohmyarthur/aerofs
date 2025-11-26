@@ -1,7 +1,7 @@
 # aerofs: High-Performance Asynchronous File I/O for Python
 
 [![PyPI](https://img.shields.io/pypi/v/aerofs.svg)](https://pypi.org/project/aerofs/)
-[![Build](https://github.com/ohmyarthur/aerofs/workflows/CI/badge.svg)](https://github.com/ohmyarthur/aerofs/actions)
+[![Release](https://github.com/ohmyarthur/aerofs/workflows/Release/badge.svg)](https://github.com/ohmyarthur/aerofs/actions)
 [![Python Versions](https://img.shields.io/pypi/pyversions/aerofs.svg)](https://pypi.org/project/aerofs/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
@@ -162,10 +162,6 @@ Available interfaces:
 - `NamedTemporaryFile`
 - `SpooledTemporaryFile`
 - `TemporaryDirectory`
-
-## Performance
-
-**aerofs** is built with Rust and Tokio, providing significant performance improvements over pure Python async file I/O libraries. Benchmarks show substantial speed improvements for common file operations.
 
 ## Requirements
 

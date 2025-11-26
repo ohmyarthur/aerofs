@@ -2,29 +2,7 @@ use pyo3::prelude::*;
 use pyo3::types::{PyList, PyString};
 use tokio::fs;
 use std::path::PathBuf;
-use crate::utils::{os_err, value_err};
-
-/// Helper function to convert PathLike objects to strings
-fn path_to_string(path: &Bound<'_, PyAny>) -> PyResult<String> {
-    if let Ok(s) = path.downcast::<PyString>() {
-        Ok(s.str()?.to_string())
-    } else {
-        if let Ok(has_fspath) = path.hasattr("__fspath__") {
-            if has_fspath {
-                let fspath_result = path.call_method0("__fspath__")?;
-                if let Ok(path_str) = fspath_result.extract::<String>() {
-                    Ok(path_str)
-                } else {
-                    Err(value_err("path must be a string path or PathLike object"))
-                }
-            } else {
-                Err(value_err("path must be a string path or PathLike object"))
-            }
-        } else {
-            Err(value_err("path must be a string path or PathLike object"))
-        }
-    }
-}
+use crate::utils::{os_err, value_err, path_to_string};
 
 #[pyfunction]
 pub fn stat<'a>(py: Python<'a>, path: Bound<'a, PyAny>) -> PyResult<Bound<'a, PyAny>> {

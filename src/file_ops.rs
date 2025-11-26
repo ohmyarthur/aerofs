@@ -53,31 +53,11 @@ impl AsyncFile {
         let path_clone = path.clone();
         let mode_clone = mode.clone();
         
+        
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let file_state = tokio::task::spawn_blocking(move || {
                 let mut options = std::fs::OpenOptions::new();
-                
-                if mode_clone.contains('r') {
-                    options.read(true);
-                    if mode_clone.contains('+') {
-                        options.write(true);
-                    }
-                }
-                if mode_clone.contains('w') {
-                    options.write(true).create(true).truncate(true);
-                    if mode_clone.contains('+') {
-                        options.read(true);
-                    }
-                }
-                if mode_clone.contains('a') {
-                    options.write(true).create(true).append(true);
-                    if mode_clone.contains('+') {
-                        options.read(true);
-                    }
-                }
-                if mode_clone.contains('x') {
-                    options.write(true).create_new(true);
-                }
+                crate::utils::configure_file_options(&mut options, &mode_clone, false)?;
                 
                 let file = options.open(&path_clone)?;
                 
@@ -124,28 +104,7 @@ impl AsyncFile {
         let future = pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let file_state = tokio::task::spawn_blocking(move || {
                 let mut options = std::fs::OpenOptions::new();
-                
-                if mode_clone.contains('r') {
-                    options.read(true);
-                    if mode_clone.contains('+') {
-                        options.write(true);
-                    }
-                }
-                if mode_clone.contains('w') {
-                    options.write(true).create(true).truncate(true);
-                    if mode_clone.contains('+') {
-                        options.read(true);
-                    }
-                }
-                if mode_clone.contains('a') {
-                    options.write(true).create(true).append(true);
-                    if mode_clone.contains('+') {
-                        options.read(true);
-                    }
-                }
-                if mode_clone.contains('x') {
-                    options.write(true).create_new(true);
-                }
+                crate::utils::configure_file_options(&mut options, &mode_clone, false)?;
                 
                 let file = options.open(&path_clone)?;
                 
@@ -336,6 +295,9 @@ impl AsyncFile {
                     let size = n as usize;
                     
                     let (bytes_obj, buffer_ptr) = Python::with_gil(|py| {
+                        // SAFETY: Creating uninitialized PyBytes to enable zero-copy read.
+                        // The bytes_obj is kept alive throughout the async operation,
+                        // ensuring the buffer pointer remains valid until the read completes.
                         unsafe {
                             let ptr = ffi::PyBytes_FromStringAndSize(std::ptr::null(), size as isize);
                             if ptr.is_null() {

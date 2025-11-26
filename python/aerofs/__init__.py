@@ -23,7 +23,7 @@ from . import os
 from . import tempfile
 from . import threadpool
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 __author__ = "ohmyarthur"
 __all__ = [
     "open",

@@ -1,5 +1,6 @@
 use pyo3::prelude::*;
 use pyo3::exceptions::{PyIOError, PyValueError, PyOSError};
+use pyo3::types::PyString;
 use std::io;
 
 pub fn io_err(_py: Python<'_>, err: io::Error) -> PyErr {
@@ -16,25 +17,101 @@ pub fn value_err(msg: &str) -> PyErr {
 }
 
 #[allow(dead_code)]
-pub fn normalize_mode(mode: &str) -> Result<String, PyErr> {
-    let mut normalized = mode.to_string();
-    if !normalized.contains('b') && !normalized.contains('t') {
-        normalized.push('t');
-    }
-    Ok(normalized)
+pub fn io_err_ctx(_py: Python<'_>, err: io::Error, context: &str) -> PyErr {
+    PyIOError::new_err(format!("{}: {}", context, err))
 }
 
-#[allow(dead_code)]
-pub fn parse_open_mode(mode: &str) -> Result<(bool, bool, bool, bool, bool), PyErr> {
-    let read = mode.contains('r');
-    let write = mode.contains('w') || mode.contains('a');
-    let append = mode.contains('a');
-    let create = mode.contains('w') || mode.contains('a') || mode.contains('x');
-    let binary = mode.contains('b');
-    
-    if mode.contains('x') && mode.contains('w') {
-        return Err(value_err("cannot have both write and exclusive create modes"));
+pub fn get_temp_dir() -> String {
+    std::env::temp_dir()
+        .to_string_lossy()
+        .to_string()
+}
+
+pub fn path_to_string(path: &Bound<'_, PyAny>) -> PyResult<String> {
+    if let Ok(s) = path.downcast::<PyString>() {
+        Ok(s.str()?.to_string())
+    } else {
+        if let Ok(has_fspath) = path.hasattr("__fspath__") {
+            if has_fspath {
+                let fspath_result = path.call_method0("__fspath__")?;
+                if let Ok(path_str) = fspath_result.extract::<String>() {
+                    Ok(path_str)
+                } else {
+                    Err(value_err("path must be a string path or PathLike object"))
+                }
+            } else {
+                Err(value_err("path must be a string path or PathLike object"))
+            }
+        } else {
+            Err(value_err("path must be a string path or PathLike object"))
+        }
     }
-    
-    Ok((read, write, append, create, binary))
+}
+
+/// Configure file open options based on Python-style mode string
+pub fn configure_file_options(
+    opts: &mut std::fs::OpenOptions,
+    mode: &str,
+    for_temp: bool,
+) -> PyResult<()> {
+    if mode.contains('r') {
+        opts.read(true);
+        if mode.contains('+') {
+            if for_temp {
+                opts.write(true).create(true);
+            } else {
+                opts.write(true);
+            }
+        }
+    }
+    if mode.contains('w') {
+        opts.write(true).create(true).truncate(true);
+        if mode.contains('+') {
+            opts.read(true);
+        }
+    }
+    if mode.contains('a') {
+        opts.write(true).create(true).append(true);
+        if mode.contains('+') {
+            opts.read(true);
+        }
+    }
+    if mode.contains('x') {
+        opts.write(true).create_new(true);
+    }
+    Ok(())
+}
+
+/// Configure tokio file open options based on Python-style mode string
+pub fn configure_file_options_async(
+    opts: &mut tokio::fs::OpenOptions,
+    mode: &str,
+    for_temp: bool,
+) -> PyResult<()> {
+    if mode.contains('r') {
+        opts.read(true);
+        if mode.contains('+') {
+            if for_temp {
+                opts.write(true).create(true);
+            } else {
+                opts.write(true);
+            }
+        }
+    }
+    if mode.contains('w') {
+        opts.write(true).create(true).truncate(true);
+        if mode.contains('+') {
+            opts.read(true);
+        }
+    }
+    if mode.contains('a') {
+        opts.write(true).create(true).append(true);
+        if mode.contains('+') {
+            opts.read(true);
+        }
+    }
+    if mode.contains('x') {
+        opts.write(true).create_new(true);
+    }
+    Ok(())
 }

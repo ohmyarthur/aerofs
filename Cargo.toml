@@ -1,6 +1,6 @@
 [package]
 name = "aerofs"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 authors = ["ohmyarthur <cp@hylcyn.xyz>"]
 description = "High-Performance Asynchronous File I/O for Python, powered by Rust"
