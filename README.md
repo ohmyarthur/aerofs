@@ -41,6 +41,8 @@ To install aerofs, simply:
 uv pip install aerofs
 ```
 
+> **Note:** Currently supports **Linux only**. macOS and Windows support is planned.
+
 ## Usage
 
 ### Basic File Operations
@@ -168,7 +170,7 @@ Available interfaces:
 ## Requirements
 
 - Python 3.9 or higher
-- Works on Linux, macOS, and Windows
+- **Linux only** (macOS and Windows support coming soon - [see issue](https://github.com/ohmyarthur/aerofs/issues))
 
 ## Contributing
 

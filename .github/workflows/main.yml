@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.get-version.outputs.version }}
-      upload_url: ${{ steps.create-release.outputs.upload_url }}
+      release_id: ${{ steps.create-release.outputs.id }}
     
     steps:
       - name: Checkout code
@@ -54,41 +54,48 @@ jobs:
       - name: Generate changelog
         id: changelog
         run: |
+          VERSION="${{ steps.get-version.outputs.version }}"
+          
+          # Check if CHANGELOG.md exists and has content for this version
           if [ -f CHANGELOG.md ]; then
-            # Extract changelog for this version
-            CHANGELOG=$(sed -n "/## \[${VERSION}\]/,/## \[/p" CHANGELOG.md | sed '$d' || echo "")
+            CHANGELOG=$(sed -n "/## \[${VERSION}\]/,/## \[/p" CHANGELOG.md | sed '$d' 2>/dev/null || echo "")
           fi
           
-          if [ -z "$CHANGELOG" ]; then
-            # Generate simple changelog from recent commits
-            CHANGELOG="## Changes\n\n"
-            CHANGELOG+=$(git log --pretty=format:"- %s (%h)" $(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")..HEAD 2>/dev/null || echo "Initial release")
+          # If no changelog found, generate from commits
+          if [ -z "$CHANGELOG" ] || [ "$CHANGELOG" = "" ]; then
+            echo "## 🚀 What's Changed" > /tmp/changelog.md
+            echo "" >> /tmp/changelog.md
+            
+            # Get previous tag or use first commit
+            PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || git rev-list --max-parents=0 HEAD)
+            
+            # Generate changelog from commits with proper formatting and user mentions
+            git log ${PREV_TAG}..HEAD --pretty=format:"- %s by @%an (%h)" --no-merges 2>/dev/null >> /tmp/changelog.md || echo "- Initial release" >> /tmp/changelog.md
+            
+            echo "" >> /tmp/changelog.md
+            echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/${PREV_TAG}...v${VERSION}" >> /tmp/changelog.md
+          else
+            echo "$CHANGELOG" > /tmp/changelog.md
           fi
           
-          # Write to file to preserve formatting
-          echo "$CHANGELOG" > /tmp/changelog.md
-        env:
-          VERSION: ${{ steps.get-version.outputs.version }}
+          cat /tmp/changelog.md
       
       - name: Create Release
         id: create-release
-        uses: actions/create-release@v1
+        uses: softprops/action-gh-release@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tag_name: v${{ steps.get-version.outputs.version }}
-          release_name: Release v${{ steps.get-version.outputs.version }}
+          name: Release v${{ steps.get-version.outputs.version }}
           body_path: /tmp/changelog.md
           draft: false
           prerelease: false
 
   build-wheels:
-    name: Build wheels on ${{ matrix.os }}
+    name: Build wheels (Linux only)
     needs: create-release
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ubuntu-latest
     
     steps:
       - name: Checkout code
@@ -117,21 +124,23 @@ jobs:
       - name: Build wheels
         run: maturin build --release --strip --out dist
       
-      - name: Upload wheels
+      - name: List built files
+        run: ls -lah dist/
+      
+      - name: Upload wheels artifact
         uses: actions/upload-artifact@v4
         with:
-          name: wheels-${{ matrix.os }}
-          path: dist/*.whl
+          name: wheels-linux
+          path: dist/
+          if-no-files-found: error
       
-      - name: Upload to Release
-        uses: actions/upload-release-asset@v1
+      - name: Upload wheels to release
+        uses: softprops/action-gh-release@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          upload_url: ${{ needs.create-release.outputs.upload_url }}
-          asset_path: dist/*.whl
-          asset_name: aerofs-${{ needs.create-release.outputs.version }}-${{ matrix.os }}.whl
-          asset_content_type: application/zip
+          tag_name: v${{ needs.create-release.outputs.version }}
+          files: dist/*.whl
 
   build-sdist:
     name: Build source distribution
@@ -165,25 +174,23 @@ jobs:
       - name: Build sdist
         run: maturin sdist --out dist
       
-      - name: Upload sdist
+      - name: List built files
+        run: ls -lah dist/
+      
+      - name: Upload sdist artifact
         uses: actions/upload-artifact@v4
         with:
           name: sdist
-          path: dist/*.tar.gz
+          path: dist/
+          if-no-files-found: error
       
-      - name: Get sdist filename
-        id: get-sdist
-        run: echo "filename=$(ls dist/*.tar.gz)" >> $GITHUB_OUTPUT
-      
-      - name: Upload to Release
-        uses: actions/upload-release-asset@v1
+      - name: Upload sdist to release
+        uses: softprops/action-gh-release@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          upload_url: ${{ needs.create-release.outputs.upload_url }}
-          asset_path: ${{ steps.get-sdist.outputs.filename }}
-          asset_name: aerofs-${{ needs.create-release.outputs.version }}.tar.gz
-          asset_content_type: application/gzip
+          tag_name: v${{ needs.create-release.outputs.version }}
+          files: dist/*.tar.gz
 
   publish-pypi:
     name: Publish to PyPI
@@ -197,6 +204,9 @@ jobs:
         with:
           path: dist
           merge-multiple: true
+      
+      - name: List downloaded files
+        run: ls -lah dist/
       
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
