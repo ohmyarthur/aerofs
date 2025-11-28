@@ -38,21 +38,13 @@ pub struct AsyncFile {
 
 #[pymethods]
 impl AsyncFile {
-    fn __aenter__<'a>(slf: PyRefMut<'a, Self>, py: Python<'a>) -> PyResult<Bound<'a, PyAny>> {
-        if slf.file.is_some() {
-            let py_obj: Py<AsyncFile> = slf.into();
-            return pyo3_async_runtimes::tokio::future_into_py(py, async move {
-                Ok(py_obj)
-            });
-        }
-        
+    fn init_file<'a>(slf: PyRefMut<'a, Self>, py: Python<'a>) -> PyResult<Bound<'a, PyAny>> {
         let path = slf.path.clone();
         let mode = slf.mode.clone();
         let py_obj: Py<AsyncFile> = slf.into();
         
         let path_clone = path.clone();
         let mode_clone = mode.clone();
-        
         
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let file_state = tokio::task::spawn_blocking(move || {
@@ -84,6 +76,16 @@ impl AsyncFile {
             })
         })
     }
+
+    fn __aenter__<'a>(slf: PyRefMut<'a, Self>, py: Python<'a>) -> PyResult<Bound<'a, PyAny>> {
+        if slf.file.is_some() {
+            let py_obj: Py<AsyncFile> = slf.into();
+            return pyo3_async_runtimes::tokio::future_into_py(py, async move {
+                Ok(py_obj)
+            });
+        }
+        Self::init_file(slf, py)
+    }
     
     fn __await__<'a>(slf: PyRefMut<'a, Self>, py: Python<'a>) -> PyResult<Bound<'a, PyAny>> {
         if slf.file.is_some() {
@@ -94,43 +96,7 @@ impl AsyncFile {
             return future.call_method0("__await__");
         }
         
-        let path = slf.path.clone();
-        let mode = slf.mode.clone();
-        let py_obj: Py<AsyncFile> = slf.into();
-        
-        let path_clone = path.clone();
-        let mode_clone = mode.clone();
-        
-        let future = pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let file_state = tokio::task::spawn_blocking(move || {
-                let mut options = std::fs::OpenOptions::new();
-                crate::utils::configure_file_options(&mut options, &mode_clone, false)?;
-                
-                let file = options.open(&path_clone)?;
-                
-                if mode_clone == "r" || mode_clone == "rb" {
-                    Ok(FileState::BufferedRead(BufReader::with_capacity(BUFFER_SIZE, file)))
-                } else {
-                    Ok(FileState::Raw(file))
-                }
-            }).await.map_err(|e| Python::with_gil(|py| io_err(py, std::io::Error::new(std::io::ErrorKind::Other, e))))?
-              .map_err(|e: std::io::Error| Python::with_gil(|_py| {
-                  let errno = e.raw_os_error();
-                  let msg = match e.kind() {
-                      std::io::ErrorKind::NotFound => format!("No such file or directory: '{}'", path.display()),
-                      std::io::ErrorKind::PermissionDenied => format!("Permission denied: '{}'", path.display()),
-                      _ => format!("{}: '{}'", e, path.display()),
-                  };
-                  pyo3::exceptions::PyOSError::new_err((errno, msg))
-              }))?;
-            
-            Python::with_gil(|py| {
-                let mut obj = py_obj.borrow_mut(py);
-                obj.file = Some(Arc::new(Mutex::new(file_state)));
-                Ok(py_obj.clone_ref(py))
-            })
-        })?;
-        
+        let future = Self::init_file(slf, py)?;
         future.call_method0("__await__")
     }
     
@@ -605,34 +571,40 @@ impl AsyncFile {
         let file_arc = self.file.as_ref()
             .ok_or_else(|| value_err("File not open"))?
             .clone();
-            
-        
-        let buffer_ptr = if let Ok(bytearray) = buffer.downcast::<PyByteArray>() {
-            unsafe { bytearray.as_bytes_mut().as_mut_ptr() }
-        } else {
-             return Err(value_err("Only bytearray is supported for fast readinto currently"));
-        };
-        
-        let buffer_ptr_int = buffer_ptr as usize;
-        let file_arc_clone = file_arc.clone();
         
         let buffer_py = buffer.unbind();
         
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let bytes_read = tokio::task::spawn_blocking(move || {
+            let file_arc_clone = file_arc.clone();
+            
+            let (bytes_read, temp_buffer) = tokio::task::spawn_blocking(move || {
                 let mut state = file_arc_clone.blocking_lock();
-                let buffer_slice = unsafe { std::slice::from_raw_parts_mut(buffer_ptr_int as *mut u8, buffer_len) };
+                let mut temp_buffer = vec![0u8; buffer_len];
                 
-                match &mut *state {
-                    FileState::BufferedRead(r) => r.read(buffer_slice),
-                    FileState::Raw(f) => f.read(buffer_slice),
-                }
+                let n = match &mut *state {
+                    FileState::BufferedRead(r) => r.read(&mut temp_buffer),
+                    FileState::Raw(f) => f.read(&mut temp_buffer),
+                }?;
+                
+                Ok::<(usize, Vec<u8>), std::io::Error>((n, temp_buffer))
             }).await.map_err(|e| Python::with_gil(|py| io_err(py, std::io::Error::new(std::io::ErrorKind::Other, e))))?
               .map_err(|e| Python::with_gil(|py| io_err(py, e)))?;
             
-            let _ = buffer_py; 
-            
-            Ok(Python::with_gil(|py| bytes_read.into_py(py)))
+            Python::with_gil(|py| {
+                let buffer = buffer_py.bind(py);
+                if let Ok(bytearray) = buffer.downcast::<PyByteArray>() {
+                    let current_len = bytearray.len();
+                    let write_len = std::cmp::min(current_len, bytes_read);
+                    
+                    unsafe {
+                        let ptr = bytearray.as_bytes_mut().as_mut_ptr();
+                        std::ptr::copy_nonoverlapping(temp_buffer.as_ptr(), ptr, write_len);
+                    }
+                    Ok(write_len.into_py(py))
+                } else {
+                     Err(value_err("Only bytearray is supported for readinto currently"))
+                }
+            })
         })
     }
     
@@ -646,29 +618,28 @@ impl AsyncFile {
         }
         
         let is_binary = self.is_binary;
-        
-        let bytes = if is_binary {
-            data.downcast::<PyBytes>()
-                .map_err(|_| value_err("expected bytes"))?
-                .as_bytes()
-                .to_vec()
-        } else {
-            let s = data.downcast::<PyString>()
-                .map_err(|_| value_err("expected str"))?
-                .str()?
-                .to_string();
-            s.into_bytes()
-        };
-        
-        let bytes_len = bytes.len();
+        let bytes_len = data.len()?;
         
         if self.buffering == 0 {
+            let bytes = if is_binary {
+                data.downcast::<PyBytes>()
+                    .map_err(|_| value_err("expected bytes"))?
+                    .as_bytes()
+                    .to_vec()
+            } else {
+                let s = data.downcast::<PyString>()
+                    .map_err(|_| value_err("expected str"))?
+                    .str()?
+                    .to_string();
+                s.into_bytes()
+            };
+            
             let file_arc = self.file.as_ref()
                 .ok_or_else(|| value_err("File not open"))?
                 .clone();
             
             pyo3_async_runtimes::tokio::future_into_py(py, async move {
-                let bytes_vec = bytes; // Move bytes into the async block
+                let bytes_vec = bytes;
                 let bytes_written = tokio::task::spawn_blocking(move || {
                     let mut state = file_arc.blocking_lock();
                     match &mut *state {
@@ -684,7 +655,16 @@ impl AsyncFile {
                 Ok(Python::with_gil(|py| bytes_written.into_py(py)))
             })
         } else {
-            self.write_buffer.extend_from_slice(&bytes);
+            if is_binary {
+                let bytes_obj = data.downcast::<PyBytes>()
+                    .map_err(|_| value_err("expected bytes"))?;
+                self.write_buffer.extend_from_slice(bytes_obj.as_bytes());
+            } else {
+                let s_obj = data.downcast::<PyString>()
+                    .map_err(|_| value_err("expected str"))?;
+                let s = s_obj.to_cow()?;
+                self.write_buffer.extend_from_slice(s.as_bytes());
+            }
             
             if self.write_buffer.len() >= BUFFER_SIZE {
                 let buffer = std::mem::replace(&mut self.write_buffer, Vec::with_capacity(BUFFER_SIZE));
@@ -858,10 +838,7 @@ impl AsyncFile {
                 
                 match &mut *state {
                     FileState::BufferedRead(r) => {
-                        // But we can't easily get mutable reference to inner file from BufReader?
-                        // We can use r.get_mut().
                         r.get_mut().set_len(target_size)?;
-                        // Invalidate buffer by seeking to current position
                         r.seek(SeekFrom::Current(0))?;
                     }
                     FileState::Raw(f) => {
@@ -909,13 +886,11 @@ impl AsyncFile {
     
     #[getter]
     fn _file(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
-        // Return self as the underlying file for compatibility
         slf
     }
     
     #[getter]
     fn _obj(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
-        // Return self as the underlying file object for aiofiles compatibility
         slf
     }
     
@@ -928,17 +903,13 @@ impl AsyncFile {
             return Err(value_err("File not open"));
         }
         
-        // Create a new Python file object for the same path
-        // This allows the test to use raw_file.read() after detach
         let path = self.path.to_string_lossy().to_string();
         let mode = self.mode.clone();
         
-        // Mark file as closed/detached so future operations fail
         self.file = None;
         self.closed = true;
         self.detached = true;
         
-        // Return a Python file object
         let builtins = py.import_bound("builtins")?;
         let file = builtins.call_method1("open", (path, mode))?;
         Ok(file)
@@ -950,10 +921,6 @@ impl AsyncFile {
         }
         
         if let Some(file_arc) = &self.file {
-            // We need to lock to get the file.
-            // But fileno is synchronous in Python usually?
-            // Wait, this is `fileno()`. It returns an integer.
-            // We can block here since it's just getting an FD.
             let state = file_arc.blocking_lock();
             let fd = match &*state {
                 FileState::BufferedRead(r) => r.get_ref().as_raw_fd(),
@@ -992,7 +959,6 @@ impl AsyncFile {
             let buffer = tokio::task::spawn_blocking(move || {
                 let mut state = file_arc_clone.blocking_lock();
                 
-                // Save current position
                 let original_pos = match &mut *state {
                     FileState::BufferedRead(r) => r.stream_position()?,
                     FileState::Raw(f) => f.stream_position()?,
@@ -1005,7 +971,6 @@ impl AsyncFile {
                 };
                 buffer.truncate(bytes_read);
                 
-                // Restore position
                 match &mut *state {
                     FileState::BufferedRead(r) => r.seek(SeekFrom::Start(original_pos))?,
                     FileState::Raw(f) => f.seek(SeekFrom::Start(original_pos))?,
@@ -1112,7 +1077,6 @@ pub fn open<'a>(
     let path_str = if let Ok(s) = file.downcast::<PyString>() {
         s.str()?.to_string()
     } else {
-        // Try to convert PathLike objects to string
         if let Ok(has_fspath) = file.hasattr("__fspath__") {
             if has_fspath {
                 let fspath_result = file.call_method0("__fspath__")?;

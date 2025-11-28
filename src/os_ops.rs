@@ -8,13 +8,37 @@ use crate::utils::{os_err, value_err, path_to_string};
 pub fn stat<'a>(py: Python<'a>, path: Bound<'a, PyAny>) -> PyResult<Bound<'a, PyAny>> {
     let path_str = path_to_string(&path)?;
     pyo3_async_runtimes::tokio::future_into_py(py, async move {
-        let _metadata = fs::metadata(&path_str).await
+        let metadata = fs::metadata(&path_str).await
             .map_err(|e| Python::with_gil(|py| os_err(py, e)))?;
         
         Python::with_gil(|py| {
             let os_module = py.import_bound("os")?;
-            let result = os_module.call_method1("stat", (&path_str,))?;
-            Ok(result.unbind())
+            let stat_result = os_module.getattr("stat_result")?;
+            
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::MetadataExt;
+                let mode = metadata.mode();
+                let ino = metadata.ino();
+                let dev = metadata.dev();
+                let nlink = metadata.nlink();
+                let uid = metadata.uid();
+                let gid = metadata.gid();
+                let size = metadata.size();
+                let atime = metadata.atime();
+                let mtime = metadata.mtime();
+                let ctime = metadata.ctime();
+                
+                let tuple = (mode, ino, dev, nlink, uid, gid, size, atime, mtime, ctime);
+                let result = stat_result.call1((tuple,))?;
+                Ok(result.unbind())
+            }
+            
+            #[cfg(not(unix))]
+            {
+                let result = os_module.call_method1("stat", (&path_str,))?;
+                Ok(result.unbind())
+            }
         })
     })
 }
@@ -220,17 +244,13 @@ pub fn scandir<'a>(py: Python<'a>, path: Option<String>) -> PyResult<Bound<'a, P
                 is_dir: metadata.is_dir(),
                 is_file: metadata.is_file(),
             };
-            
-            
-            Python::with_gil(|py| {
-                entries_list.push(Py::new(py, dir_entry).unwrap());
-            });
+            entries_list.push(dir_entry);
         }
         
         Python::with_gil(|py| {
             let list = PyList::empty_bound(py);
             for entry in entries_list {
-                list.append(entry)?;
+                list.append(Py::new(py, entry)?)?;
             }
             Ok(list.into_any().unbind())
         })

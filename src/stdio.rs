@@ -1,6 +1,6 @@
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyString};
-use tokio::io::{self, AsyncReadExt, AsyncWriteExt};
+use tokio::io::{self, AsyncBufReadExt, AsyncWriteExt};
 use crate::utils::value_err;
 
 #[pyclass]
@@ -11,8 +11,6 @@ pub struct AsyncStdin {
 #[pymethods]
 impl AsyncStdin {
     fn read<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, PyAny>> {
-        // stdin.read() is not supported in async context as it would block
-        // Raise OSError to match expected behavior
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             Err::<Py<PyAny>, PyErr>(pyo3::exceptions::PyOSError::new_err("stdin.read() not supported in async context"))
         })
@@ -22,24 +20,15 @@ impl AsyncStdin {
         let is_bytes = self.is_bytes;
         
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let mut stdin = io::stdin();
+            let stdin = io::stdin();
+            let mut reader = io::BufReader::new(stdin);
             let mut buffer = Vec::new();
-            let mut byte = [0u8; 1];
             
-            loop {
-                let n = stdin.read(&mut byte).await
-                    .map_err(|e| value_err(&e.to_string()))?;
-                if n == 0 {
-                    break;
-                }
-                buffer.push(byte[0]);
-                if byte[0] == b'\n' {
-                    break;
-                }
-            }
+            reader.read_until(b'\n', &mut buffer).await
+                .map_err(|e| value_err(&e.to_string()))?;
             
             Python::with_gil(|py| {
-            if is_bytes {
+                if is_bytes {
                     Ok(PyBytes::new_bound(py, &buffer).into_any().unbind())
                 } else {
                     let s = String::from_utf8_lossy(&buffer);
