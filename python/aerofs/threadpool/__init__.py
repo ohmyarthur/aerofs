@@ -6,6 +6,7 @@ this module simply re-exports the main aerofs functions."""
 
 import asyncio
 import builtins
+import functools
 from aerofs import open as _rust_open
 
 sync_open = builtins.open
@@ -59,25 +60,49 @@ def open(*args, **kwargs):
     else:
         return _rust_open(*args, **kwargs)
 
-def wrap(func):
-    """Wrap a synchronous function to be async.
-    
-    Note: This is a compatibility shim. aerofs uses native async I/O,
-    not thread pools.
-    """
-    import asyncio
-    import functools
+class AsyncWrapper:
+    def __init__(self, file_obj, loop=None, executor=None):
+        self._file = file_obj
+        self._loop = loop or asyncio.get_event_loop()
+        self._executor = executor
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        await self.close()
+
+    def __getattr__(self, name):
+        attr = getattr(self._file, name)
+        if not callable(attr):
+            return attr
+            
+        @functools.wraps(attr)
+        async def wrapper(*args, **kwargs):
+            return await self._loop.run_in_executor(
+                self._executor, functools.partial(attr, *args, **kwargs)
+            )
+        return wrapper
+
+    def __iter__(self):
+        return self._file.__iter__()
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        line = await self.readline()
+        if not line:
+            raise StopAsyncIteration
+        return line
+
+def wrap(file_obj, loop=None, executor=None):
     import tempfile
     from io import TextIOBase, FileIO, BufferedIOBase, BufferedReader, BufferedWriter, BufferedRandom
     
-    if not isinstance(func, (TextIOBase, FileIO, BufferedIOBase, BufferedReader, BufferedWriter, BufferedRandom, tempfile.SpooledTemporaryFile)):
-        raise TypeError(f"Unsupported io type: {func}.")
-    
-    @functools.wraps(func)
-    async def wrapper(*args, **kwargs):
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, functools.partial(func, *args, **kwargs))
-    
-    return wrapper
+    if not isinstance(file_obj, (TextIOBase, FileIO, BufferedIOBase, BufferedReader, BufferedWriter, BufferedRandom, tempfile.SpooledTemporaryFile)):
+        raise TypeError(f"Unsupported io type: {file_obj}.")
+        
+    return AsyncWrapper(file_obj, loop=loop, executor=executor)
 
 __all__ = ['open', 'wrap']

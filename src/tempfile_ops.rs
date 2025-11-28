@@ -156,10 +156,43 @@ impl AsyncTemporaryFile {
         })
     }
     
-    fn readinto<'a>(&mut self, py: Python<'a>, _buffer: Bound<'a, PyAny>) -> PyResult<Bound<'a, PyAny>> {
+    fn readinto<'a>(&mut self, py: Python<'a>, buffer: Bound<'a, PyAny>) -> PyResult<Bound<'a, PyAny>> {
+        if self.closed {
+            return Err(value_err("I/O operation on closed file"));
+        }
+        
+        if self.file.is_none() {
+            return Err(value_err("File not open"));
+        }
+        
+        let buffer_len = buffer.len()?;
+        let file_arc = self.file.as_ref()
+            .ok_or_else(|| value_err("File not open"))?
+            .clone();
+        
+        let buffer_py = buffer.unbind();
+        
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let mut f = file_arc.lock().await;
+            let mut temp_buffer = vec![0u8; buffer_len];
+            
+            let bytes_read = f.read(&mut temp_buffer).await
+                .map_err(|e| Python::with_gil(|py| io_err(py, e)))?;
+            
             Python::with_gil(|py| {
-                Ok(0.into_py(py))  // Return 0 bytes read as placeholder
+                let buffer = buffer_py.bind(py);
+                if let Ok(bytearray) = buffer.downcast::<pyo3::types::PyByteArray>() {
+                    let current_len = bytearray.len();
+                    let write_len = std::cmp::min(current_len, bytes_read);
+                    
+                    unsafe {
+                        let ptr = bytearray.as_bytes_mut().as_mut_ptr();
+                        std::ptr::copy_nonoverlapping(temp_buffer.as_ptr(), ptr, write_len);
+                    }
+                    Ok(write_len.into_py(py))
+                } else {
+                     Err(value_err("Only bytearray is supported for readinto currently"))
+                }
             })
         })
     }
@@ -466,154 +499,6 @@ pub fn temporary_directory<'a>(
     })
 }
 
-#[pyclass]
-pub struct AsyncSpooledTemporaryFile {
-    file: Option<Py<AsyncTemporaryFile>>,
-    #[allow(dead_code)]
-    max_size: usize,
-    mode: Option<String>,
-    suffix: Option<String>,
-    prefix: Option<String>,
-    dir: Option<String>,
-    buffering: Option<i32>,
-    encoding: Option<String>,
-    newline: Option<String>,
-}
-
-#[pymethods]
-impl AsyncSpooledTemporaryFile {
-    fn __aenter__<'a>(slf: PyRefMut<'a, Self>, py: Python<'a>) -> PyResult<Bound<'a, PyAny>> {
-        let py_obj: Py<AsyncSpooledTemporaryFile> = slf.into();
-        
-        let (mode, suffix, prefix, dir, buffering, encoding, newline) = Python::with_gil(|py| {
-            let obj = py_obj.borrow(py);
-            (
-                obj.mode.clone(),
-                obj.suffix.clone(),
-                obj.prefix.clone(),
-                obj.dir.clone(),
-                obj.buffering,
-                obj.encoding.clone(),
-                obj.newline.clone(),
-            )
-        });
-        
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let temp_dir = dir.unwrap_or_else(|| crate::utils::get_temp_dir());
-            let file_prefix = prefix.unwrap_or_else(|| "tmp".to_string());
-            let file_suffix = suffix.unwrap_or_else(|| "".to_string());
-            let mode_str = mode.as_deref().unwrap_or("w+b");
-            
-            let filename = format!("{}{}{}", file_prefix, uuid::Uuid::new_v4(), file_suffix);
-            let path = PathBuf::from(temp_dir.clone()).join(&filename);
-            
-            let mut opts = tokio::fs::OpenOptions::new();
-            crate::utils::configure_file_options_async(&mut opts, mode_str, true)?;
-            
-            let file = opts.open(&path).await
-                .map_err(|e| Python::with_gil(|py| io_err(py, e)))?;
-            
-            Python::with_gil(|py| {
-                let temp_file = AsyncTemporaryFile {
-                    file: Some(Arc::new(Mutex::new(file))),
-                    path,
-                    delete_on_close: true,
-                    closed: false,
-                    mode: mode.clone(),
-                    buffering,
-                    encoding,
-                    newline,
-                    suffix: Some(file_suffix.clone()),
-                    prefix: Some(file_prefix.clone()),
-                    dir: Some(temp_dir.clone()),
-                };
-                
-                let py_temp_file = Py::new(py, temp_file)
-                    .map_err(|e| PyErr::from(e))?;
-                
-                let mut obj = py_obj.borrow_mut(py);
-                obj.file = Some(py_temp_file);
-                Ok(py_obj.clone_ref(py))
-            })
-        })
-    }
-    
-    fn __aexit__<'a>(
-        _slf: PyRefMut<'a, Self>,
-        py: Python<'a>,
-        _exc_type: Bound<'a, PyAny>,
-        _exc_val: Bound<'a, PyAny>,
-        _exc_tb: Bound<'a, PyAny>,
-    ) -> PyResult<Bound<'a, PyAny>> {
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            Ok(Python::with_gil(|py| false.into_py(py)))
-        })
-    }
-    
-    #[pyo3(signature = (size=None))]
-    fn read<'a>(&mut self, py: Python<'a>, size: Option<i64>) -> PyResult<Bound<'a, PyAny>> {
-        if let Some(ref py_file) = self.file {
-            let mut file = py_file.borrow_mut(py);
-            file.read(py, size)
-        } else {
-            Err(value_err("No underlying file"))
-        }
-    }
-    
-    fn write<'a>(&mut self, py: Python<'a>, data: Bound<'a, PyAny>) -> PyResult<Bound<'a, PyAny>> {
-        if let Some(ref py_file) = self.file {
-            let mut file = py_file.borrow_mut(py);
-            file.write(py, data)
-        } else {
-            Err(value_err("No underlying file"))
-        }
-    }
-    
-    fn flush<'a>(&mut self, py: Python<'a>) -> PyResult<Bound<'a, PyAny>> {
-        if let Some(ref py_file) = self.file {
-            let mut file = py_file.borrow_mut(py);
-            file.flush(py)
-        } else {
-            Err(value_err("No underlying file"))
-        }
-    }
-    
-    #[pyo3(signature = (offset, whence=None))]
-    fn seek<'a>(&mut self, py: Python<'a>, offset: i64, whence: Option<i32>) -> PyResult<Bound<'a, PyAny>> {
-        if let Some(ref py_file) = self.file {
-            let mut file = py_file.borrow_mut(py);
-            file.seek(py, offset, whence)
-        } else {
-            Err(value_err("No underlying file"))
-        }
-    }
-    
-    #[getter]
-    fn name(&self) -> Option<String> {
-        Python::with_gil(|py| {
-            self.file.as_ref().and_then(|py_file| {
-                let file = py_file.borrow(py);
-                Some(file.name())
-            })
-        })
-    }
-    
-    #[getter]
-    fn delete(&self) -> bool {
-        Python::with_gil(|py| {
-            self.file.as_ref().map(|py_file| {
-                let file = py_file.borrow(py);
-                file.delete_on_close
-            }).unwrap_or(true)
-        })
-    }
-    
-    #[getter]
-    fn _file(&self, py: Python<'_>) -> Option<Py<AsyncTemporaryFile>> {
-        self.file.as_ref().map(|f| f.clone_ref(py))
-    }
-}
-
 #[pyfunction]
 #[pyo3(signature = (max_size=0, mode="w+b", buffering=-1, encoding=None, newline=None, suffix=None, prefix=None, dir=None))]
 pub fn spooled_temporary_file<'a>(
@@ -670,6 +555,5 @@ pub fn register_tempfile_module(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyR
     m.add_function(wrap_pyfunction!(spooled_temporary_file, m)?)?;
     m.add_class::<AsyncTemporaryFile>()?;
     m.add_class::<AsyncTemporaryDirectory>()?;
-    m.add_class::<AsyncSpooledTemporaryFile>()?;
     Ok(())
 }
