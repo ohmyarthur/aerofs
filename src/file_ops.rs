@@ -306,11 +306,7 @@ impl AsyncFile {
                     let bytes_read = tokio::task::spawn_blocking(move || {
                         let mut state = file_arc_clone.blocking_lock();
                         let buffer_slice = unsafe { std::slice::from_raw_parts_mut(buffer_ptr_int as *mut u8, size) };
-                        
-                        match &mut *state {
-                            FileState::BufferedRead(r) => r.read(buffer_slice),
-                            FileState::Raw(f) => f.read(buffer_slice),
-                        }
+                        state.read_bytes(buffer_slice)
                     }).await.map_err(|e| Python::with_gil(|py| io_err(py, std::io::Error::new(std::io::ErrorKind::Other, e))))?
                       .map_err(|e| Python::with_gil(|py| io_err(py, e)))?;
                     
@@ -345,18 +341,10 @@ impl AsyncFile {
                 }
             }
             
-            let file_arc_clone = file_arc.clone();
             let buffer = tokio::task::spawn_blocking(move || {
-                let mut state = file_arc_clone.blocking_lock();
+                let mut state = file_arc.blocking_lock();
                 let mut buffer = Vec::with_capacity(BUFFER_SIZE);
-                match &mut *state {
-                    FileState::BufferedRead(r) => {
-                        r.read_to_end(&mut buffer)?;
-                    }
-                    FileState::Raw(f) => {
-                        f.read_to_end(&mut buffer)?;
-                    }
-                }
+                state.read_all(&mut buffer)?;
                 Ok::<Vec<u8>, std::io::Error>(buffer)
             }).await.map_err(|e| Python::with_gil(|py| io_err(py, std::io::Error::new(std::io::ErrorKind::Other, e))))?
               .map_err(|e| Python::with_gil(|py| io_err(py, e)))?;
@@ -389,14 +377,10 @@ impl AsyncFile {
             .clone();
         
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let file_arc_clone = file_arc.clone();
             let buffer = tokio::task::spawn_blocking(move || {
-                let mut state = file_arc_clone.blocking_lock();
+                let mut state = file_arc.blocking_lock();
                 let mut buffer = vec![0u8; size];
-                let bytes_read = match &mut *state {
-                    FileState::BufferedRead(r) => r.read(&mut buffer)?,
-                    FileState::Raw(f) => f.read(&mut buffer)?,
-                };
+                let bytes_read = state.read_bytes(&mut buffer)?;
                 buffer.truncate(bytes_read);
                 Ok::<Vec<u8>, std::io::Error>(buffer)
             }).await.map_err(|e| Python::with_gil(|py| io_err(py, std::io::Error::new(std::io::ErrorKind::Other, e))))?
@@ -433,36 +417,17 @@ impl AsyncFile {
             .clone();
         
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            
-            let file_arc_clone = file_arc.clone();
             let line = tokio::task::spawn_blocking(move || {
-                let mut state = file_arc_clone.blocking_lock();
+                let mut state = file_arc.blocking_lock();
                 let mut line = Vec::new();
                 
                 let _bytes_read = if let Some(n) = size {
                     if n <= 0 {
-                        match &mut *state {
-                            FileState::BufferedRead(r) => {
-                                r.read_until(b'\n', &mut line)?
-                            }
-                            FileState::Raw(f) => {
-                                let mut byte = [0u8; 1];
-                                loop {
-                                    let n = f.read(&mut byte)?;
-                                    if n == 0 { break; }
-                                    line.push(byte[0]);
-                                    if byte[0] == b'\n' { break; }
-                                }
-                                line.len()
-                            }
-                        }
+                        state.read_line(&mut line)?
                     } else {
                         for _ in 0..n {
                             let mut byte = [0u8; 1];
-                            let n_read = match &mut *state {
-                                FileState::BufferedRead(r) => r.read(&mut byte)?,
-                                FileState::Raw(f) => f.read(&mut byte)?,
-                            };
+                            let n_read = state.read_bytes(&mut byte)?;
                             if n_read == 0 {
                                 break;
                             }
@@ -474,25 +439,7 @@ impl AsyncFile {
                         line.len()
                     }
                 } else {
-                    match &mut *state {
-                        FileState::BufferedRead(r) => {
-                            r.read_until(b'\n', &mut line)?
-                        }
-                        FileState::Raw(f) => {
-                            let mut byte = [0u8; 1];
-                            loop {
-                                let n = f.read(&mut byte)?;
-                                if n == 0 {
-                                    break;
-                                }
-                                line.push(byte[0]);
-                                if byte[0] == b'\n' {
-                                    break;
-                                }
-                            }
-                            line.len()
-                        }
-                    }
+                    state.read_line(&mut line)?
                 };
                 Ok::<Vec<u8>, std::io::Error>(line)
             }).await.map_err(|e| Python::with_gil(|py| io_err(py, std::io::Error::new(std::io::ErrorKind::Other, e))))?
@@ -781,20 +728,15 @@ impl AsyncFile {
             .clone();
         
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let file_arc_clone = file_arc.clone();
             let pos = tokio::task::spawn_blocking(move || {
-                let mut state = file_arc_clone.blocking_lock();
+                let mut state = file_arc.blocking_lock();
                 let seek_from = match whence {
                     0 => SeekFrom::Start(offset as u64),
                     1 => SeekFrom::Current(offset),
                     2 => SeekFrom::End(offset),
                     _ => return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "invalid whence")),
                 };
-                
-                match &mut *state {
-                    FileState::BufferedRead(r) => r.seek(seek_from),
-                    FileState::Raw(f) => f.seek(seek_from),
-                }
+                state.seek_to(seek_from)
             }).await.map_err(|e| Python::with_gil(|py| io_err(py, std::io::Error::new(std::io::ErrorKind::Other, e))))?
               .map_err(|e| Python::with_gil(|py| io_err(py, e)))?;
             
@@ -816,13 +758,9 @@ impl AsyncFile {
             .clone();
         
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let file_arc_clone = file_arc.clone();
             let pos = tokio::task::spawn_blocking(move || {
-                let mut state = file_arc_clone.blocking_lock();
-                match &mut *state {
-                    FileState::BufferedRead(r) => r.stream_position(),
-                    FileState::Raw(f) => f.stream_position(),
-                }
+                let mut state = file_arc.blocking_lock();
+                state.position()
             }).await.map_err(|e| Python::with_gil(|py| io_err(py, std::io::Error::new(std::io::ErrorKind::Other, e))))?
               .map_err(|e| Python::with_gil(|py| io_err(py, e)))?;
             
@@ -945,11 +883,7 @@ impl AsyncFile {
         
         if let Some(file_arc) = &self.file {
             let state = file_arc.blocking_lock();
-            let fd = match &*state {
-                FileState::BufferedRead(r) => r.get_ref().as_raw_fd(),
-                FileState::Raw(f) => f.as_raw_fd(),
-            };
-            Ok(fd)
+            Ok(state.raw_fd())
         } else {
             Err(value_err("File not open"))
         }
