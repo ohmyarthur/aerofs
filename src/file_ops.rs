@@ -17,6 +17,91 @@ enum FileState {
     Raw(File),
 }
 
+impl FileState {
+    /// Write buffer to file
+    fn write_buffer(&mut self, buffer: &[u8]) -> std::io::Result<()> {
+        if buffer.is_empty() {
+            return Ok(());
+        }
+        match self {
+            FileState::BufferedRead(r) => r.get_mut().write_all(buffer),
+            FileState::Raw(f) => f.write_all(buffer),
+        }
+    }
+
+    /// Flush to disk
+    fn flush_file(&mut self) -> std::io::Result<()> {
+        match self {
+            FileState::BufferedRead(r) => r.get_mut().flush(),
+            FileState::Raw(f) => f.flush(),
+        }
+    }
+
+    /// Read into buffer
+    fn read_bytes(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        match self {
+            FileState::BufferedRead(r) => r.read(buf),
+            FileState::Raw(f) => f.read(buf),
+        }
+    }
+
+    /// Read all remaining bytes
+    fn read_all(&mut self, buf: &mut Vec<u8>) -> std::io::Result<usize> {
+        match self {
+            FileState::BufferedRead(r) => r.read_to_end(buf),
+            FileState::Raw(f) => f.read_to_end(buf),
+        }
+    }
+
+    /// Seek to position
+    fn seek_to(&mut self, pos: SeekFrom) -> std::io::Result<u64> {
+        match self {
+            FileState::BufferedRead(r) => r.seek(pos),
+            FileState::Raw(f) => f.seek(pos),
+        }
+    }
+
+    /// Get current position
+    fn position(&mut self) -> std::io::Result<u64> {
+        match self {
+            FileState::BufferedRead(r) => r.stream_position(),
+            FileState::Raw(f) => f.stream_position(),
+        }
+    }
+
+    /// Read until newline
+    fn read_line(&mut self, line: &mut Vec<u8>) -> std::io::Result<usize> {
+        match self {
+            FileState::BufferedRead(r) => r.read_until(b'\n', line),
+            FileState::Raw(f) => {
+                let mut byte = [0u8; 1];
+                let mut count = 0;
+                loop {
+                    let n = f.read(&mut byte)?;
+                    if n == 0 {
+                        break;
+                    }
+                    line.push(byte[0]);
+                    count += 1;
+                    if byte[0] == b'\n' {
+                        break;
+                    }
+                }
+                Ok(count)
+            }
+        }
+    }
+
+    /// Get raw fd
+    #[cfg(unix)]
+    fn raw_fd(&self) -> i32 {
+        match self {
+            FileState::BufferedRead(r) => r.get_ref().as_raw_fd(),
+            FileState::Raw(f) => f.as_raw_fd(),
+        }
+    }
+}
+
 #[pyclass]
 pub struct AsyncFile {
     file: Option<Arc<Mutex<FileState>>>,
@@ -117,28 +202,10 @@ impl AsyncFile {
         
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             if let Some(file_arc) = file {
-                let file_arc_clone = file_arc.clone();
                 tokio::task::spawn_blocking(move || {
-                    let mut state = file_arc_clone.blocking_lock();
-                    if !buffer.is_empty() {
-                        match &mut *state {
-                            FileState::BufferedRead(r) => {
-                                let f = r.get_mut();
-                                f.write_all(&buffer).map_err(|e| Python::with_gil(|py| io_err(py, e)))?;
-                            }
-                            FileState::Raw(f) => {
-                                f.write_all(&buffer).map_err(|e| Python::with_gil(|py| io_err(py, e)))?;
-                            }
-                        }
-                    }
-                    match &mut *state {
-                        FileState::BufferedRead(r) => {
-                            r.get_mut().flush().ok();
-                        }
-                        FileState::Raw(f) => {
-                            f.flush().ok();
-                        }
-                    }
+                    let mut state = file_arc.blocking_lock();
+                    state.write_buffer(&buffer).map_err(|e| Python::with_gil(|py| io_err(py, e)))?;
+                    state.flush_file().ok();
                     Ok::<(), PyErr>(())
                 }).await.map_err(|e| Python::with_gil(|py| io_err(py, std::io::Error::new(std::io::ErrorKind::Other, e))))??;
             }
@@ -157,28 +224,10 @@ impl AsyncFile {
         
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             if let Some(file_arc) = file_handle {
-                let file_arc_clone = file_arc.clone();
                 tokio::task::spawn_blocking(move || {
-                    let mut state = file_arc_clone.blocking_lock();
-                    if !buffer.is_empty() {
-                        match &mut *state {
-                            FileState::BufferedRead(r) => {
-                                let f = r.get_mut();
-                                f.write_all(&buffer).map_err(|e| Python::with_gil(|py| io_err(py, e)))?;
-                            }
-                            FileState::Raw(f) => {
-                                f.write_all(&buffer).map_err(|e| Python::with_gil(|py| io_err(py, e)))?;
-                            }
-                        }
-                    }
-                    match &mut *state {
-                        FileState::BufferedRead(r) => {
-                            r.get_mut().flush().map_err(|e| Python::with_gil(|py| io_err(py, e)))?;
-                        }
-                        FileState::Raw(f) => {
-                            f.flush().map_err(|e| Python::with_gil(|py| io_err(py, e)))?;
-                        }
-                    }
+                    let mut state = file_arc.blocking_lock();
+                    state.write_buffer(&buffer).map_err(|e| Python::with_gil(|py| io_err(py, e)))?;
+                    state.flush_file().map_err(|e| Python::with_gil(|py| io_err(py, e)))?;
                     Ok::<(), PyErr>(())
                 }).await.map_err(|e| Python::with_gil(|py| io_err(py, std::io::Error::new(std::io::ErrorKind::Other, e))))??;
             }
@@ -202,31 +251,10 @@ impl AsyncFile {
             .clone();
         
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let file_arc_clone = file_arc.clone();
             tokio::task::spawn_blocking(move || {
-                let mut state = file_arc_clone.blocking_lock();
-                if !buffer.is_empty() {
-                    match &mut *state {
-                        FileState::BufferedRead(r) => {
-                             let f = r.get_mut();
-                             f.write_all(&buffer)?;
-                             f.flush()?;
-                        }
-                        FileState::Raw(f) => {
-                            f.write_all(&buffer)?;
-                            f.flush()?;
-                        }
-                    }
-                } else {
-                     match &mut *state {
-                        FileState::BufferedRead(r) => {
-                             r.get_mut().flush()?;
-                        }
-                        FileState::Raw(f) => {
-                            f.flush()?;
-                        }
-                     }
-                }
+                let mut state = file_arc.blocking_lock();
+                state.write_buffer(&buffer)?;
+                state.flush_file()?;
                 Ok::<(), std::io::Error>(())
             }).await.map_err(|e| Python::with_gil(|py| io_err(py, std::io::Error::new(std::io::ErrorKind::Other, e))))?
               .map_err(|e| Python::with_gil(|py| io_err(py, e)))?;
@@ -261,9 +289,6 @@ impl AsyncFile {
                     let size = n as usize;
                     
                     let (bytes_obj, buffer_ptr) = Python::with_gil(|py| {
-                        // SAFETY: Creating uninitialized PyBytes to enable zero-copy read.
-                        // The bytes_obj is kept alive throughout the async operation,
-                        // ensuring the buffer pointer remains valid until the read completes.
                         unsafe {
                             let ptr = ffi::PyBytes_FromStringAndSize(std::ptr::null(), size as isize);
                             if ptr.is_null() {
@@ -274,9 +299,7 @@ impl AsyncFile {
                             Ok((obj, buffer))
                         }
                     })?;
-                    
-                    // Safety: We hold `bytes_obj` in the async frame (via `bytes_obj` variable).
-                    
+                                        
                     let buffer_ptr_int = buffer_ptr as usize;
                     let file_arc_clone = file_arc.clone();
                     

@@ -47,3 +47,4 @@ htmlcov/
 Thumbs.db
 *.bak
 verify_full_api.py
+real_operations.py

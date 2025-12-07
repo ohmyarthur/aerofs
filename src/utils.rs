@@ -48,7 +48,7 @@ pub fn path_to_string(path: &Bound<'_, PyAny>) -> PyResult<String> {
     }
 }
 
-/// Configure file open options based on Python-style mode string
+/// Configure std::fs options from mode string
 pub fn configure_file_options(
     opts: &mut std::fs::OpenOptions,
     mode: &str,
@@ -82,7 +82,7 @@ pub fn configure_file_options(
     Ok(())
 }
 
-/// Configure tokio file open options based on Python-style mode string
+/// Configure tokio::fs options from mode string
 pub fn configure_file_options_async(
     opts: &mut tokio::fs::OpenOptions,
     mode: &str,

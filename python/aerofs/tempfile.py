@@ -1,5 +1,4 @@
-import asyncio
-import tempfile
+
 from ._aerofs.tempfile import (
     named_temporary_file as NamedTemporaryFile,
     temporary_directory as TemporaryDirectory,
