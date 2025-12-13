@@ -1,5 +1,6 @@
 use pyo3::prelude::*;
-use pyo3::types::{PyBool, PyString, PyDict};
+use pyo3::types::{PyString, PyDict};
+use pyo3::conversion::IntoPyObject;
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncWriteExt, AsyncSeekExt};
 use std::path::PathBuf;
@@ -80,13 +81,13 @@ impl AsyncTemporaryFile {
             
             tokio::fs::remove_file(&path).await.ok();
             
-            Ok(Python::with_gil(|py| PyBool::new(py, false).into_any().unbind()))
+            Ok(Python::with_gil(|py| py.None()))
         })
     }
     
     fn close<'a>(&mut self, py: Python<'a>) -> PyResult<Bound<'a, PyAny>> {
         if self.closed {
-            return pyo3_async_runtimes::tokio::future_into_py(py, async { Ok(Python::with_gil(|py| <() as pyo3::IntoPy<Py<PyAny>>>::into_py((), py))) });
+            return pyo3_async_runtimes::tokio::future_into_py(py, async { Ok(Python::with_gil(|py| py.None())) });
         }
         
         let file = self.file.take();
@@ -105,7 +106,7 @@ impl AsyncTemporaryFile {
                 tokio::fs::remove_file(&path).await.ok();
             }
             
-            Ok(Python::with_gil(|py| <() as pyo3::IntoPy<Py<PyAny>>>::into_py((), py)))
+            Ok(Python::with_gil(|py| py.None()))
         })
     }
     
@@ -189,7 +190,7 @@ impl AsyncTemporaryFile {
                         let ptr = bytearray.as_bytes_mut().as_mut_ptr();
                         std::ptr::copy_nonoverlapping(temp_buffer.as_ptr(), ptr, write_len);
                     }
-                    Ok(write_len.into_py(py))
+                    Ok(write_len.into_pyobject(py).unwrap().to_owned().unbind())
                 } else {
                      Err(value_err("Only bytearray is supported for readinto currently"))
                 }
@@ -221,7 +222,7 @@ impl AsyncTemporaryFile {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let mut f = file_arc.lock().await;
             let written = f.write(&bytes).await.map_err(|e| Python::with_gil(|py| io_err(py, e)))?;
-            Ok(Python::with_gil(|py| written.into_py(py)))
+            Ok(Python::with_gil(|py| written.into_pyobject(py).unwrap().to_owned().unbind()))
         })
     }
     
@@ -271,7 +272,7 @@ impl AsyncTemporaryFile {
             };
             
             let new_pos = f.seek(pos).await.map_err(|e| Python::with_gil(|py| io_err(py, e)))?;
-            Ok(Python::with_gil(|py| new_pos.into_py(py)))
+            Ok(Python::with_gil(|py| new_pos.into_pyobject(py).unwrap().to_owned().unbind()))
         })
     }
     
@@ -391,7 +392,7 @@ impl AsyncTemporaryDirectory {
                 if let Some(p) = &obj.path {
                     Ok(PyString::new(py, &p.to_string_lossy()).into_any().unbind())
                 } else {
-                    Ok(<() as pyo3::IntoPy<Py<PyAny>>>::into_py((), py))
+                    Ok(py.None())
                 }
             })
         })
@@ -410,7 +411,7 @@ impl AsyncTemporaryDirectory {
             if let Some(p) = path {
                 tokio::fs::remove_dir_all(&p).await.ok();
             }
-            Ok(Python::with_gil(|py| PyBool::new(py, false).into_any().unbind()))
+            Ok(Python::with_gil(|py| py.None()))
         })
     }
     
@@ -422,7 +423,7 @@ impl AsyncTemporaryDirectory {
                 tokio::fs::remove_dir_all(&p).await
                     .map_err(|e| Python::with_gil(|py| io_err(py, e)))?;
             }
-            Ok(Python::with_gil(|py| <() as pyo3::IntoPy<Py<PyAny>>>::into_py((), py)))
+            Ok(Python::with_gil(|py| py.None()))
         })
     }
     

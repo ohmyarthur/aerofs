@@ -159,11 +159,9 @@ jobs:
           python-version: '3.11'
       
       - name: Install Rust
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
-          profile: minimal
-          override: true
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
       
       - name: Install uv
         run: pip install uv
@@ -172,7 +170,7 @@ jobs:
         run: uv pip install --system maturin
       
       - name: Build universal2 wheels
-        run: maturin build --release --strip --out dist --universal2
+        run: maturin build --release --strip --out dist --target universal2-apple-darwin
       
       - name: List built files
         run: ls -lah dist/

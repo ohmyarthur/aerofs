@@ -1,5 +1,6 @@
 use pyo3::prelude::*;
-use pyo3::types::{PyBytes, PyString, PyList, PyByteArray, PyBytesMethods, PyBool};
+use pyo3::types::{PyBytes, PyString, PyList, PyByteArray, PyBytesMethods};
+use pyo3::conversion::IntoPyObject;
 use pyo3::ffi;
 use std::fs::File;
 use std::io::{Read, Write, Seek, SeekFrom, BufReader, BufRead};
@@ -209,7 +210,7 @@ impl AsyncFile {
                     Ok::<(), PyErr>(())
                 }).await.map_err(|e| Python::with_gil(|py| io_err(py, std::io::Error::new(std::io::ErrorKind::Other, e))))??;
             }
-            Ok(Python::with_gil(|py| PyBool::new(py, false).into_any().unbind()))
+            Ok(Python::with_gil(|py| py.None()))
         })
     }
     
@@ -231,7 +232,7 @@ impl AsyncFile {
                     Ok::<(), PyErr>(())
                 }).await.map_err(|e| Python::with_gil(|py| io_err(py, std::io::Error::new(std::io::ErrorKind::Other, e))))??;
             }
-            Ok(Python::with_gil(|py| <() as pyo3::IntoPy<Py<PyAny>>>::into_py((), py)))
+            Ok(Python::with_gil(|py| py.None()))
         })
     }
     
@@ -523,7 +524,7 @@ impl AsyncFile {
                         list.append(PyString::new(py, &s))?;
                     }
                 }
-                Ok(list.into_py(py))
+                Ok(list.unbind())
             })
         })
     }
@@ -570,7 +571,7 @@ impl AsyncFile {
                         let ptr = bytearray.as_bytes_mut().as_mut_ptr();
                         std::ptr::copy_nonoverlapping(temp_buffer.as_ptr(), ptr, write_len);
                     }
-                    Ok(write_len.into_py(py))
+                    Ok(write_len.into_pyobject(py)?.unbind())
                 } else {
                      Err(value_err("Only bytearray is supported for readinto currently"))
                 }
@@ -622,7 +623,7 @@ impl AsyncFile {
                     }
                 }).await.map_err(|e| Python::with_gil(|py| io_err(py, std::io::Error::new(std::io::ErrorKind::Other, e))))??;
                 
-                Ok(Python::with_gil(|py| bytes_written.into_py(py)))
+                Ok(Python::with_gil(|py| bytes_written.into_pyobject(py).unwrap().to_owned().unbind()))
             })
         } else {
             if is_binary {
@@ -652,11 +653,11 @@ impl AsyncFile {
                             f.write_all(&buffer).map_err(|e| Python::with_gil(|py| io_err(py, e)))?;
                         }
                     }
-                    Ok(Python::with_gil(|py| bytes_len.into_py(py)))
+                    Ok(Python::with_gil(|py| bytes_len.into_pyobject(py).unwrap().to_owned().unbind()))
                 })
             } else {
                 pyo3_async_runtimes::tokio::future_into_py(py, async move {
-                    Ok(Python::with_gil(|py| bytes_len.into_py(py)))
+                    Ok(Python::with_gil(|py| bytes_len.into_pyobject(py).unwrap().to_owned().unbind()))
                 })
             }
         }
@@ -708,7 +709,7 @@ impl AsyncFile {
                     }
                 }
             }
-            Ok(Python::with_gil(|py| <() as pyo3::IntoPy<Py<PyAny>>>::into_py((), py)))
+            Ok(Python::with_gil(|py| py.None()))
         })
     }
     
@@ -740,7 +741,7 @@ impl AsyncFile {
             }).await.map_err(|e| Python::with_gil(|py| io_err(py, std::io::Error::new(std::io::ErrorKind::Other, e))))?
               .map_err(|e| Python::with_gil(|py| io_err(py, e)))?;
             
-            Ok(Python::with_gil(|py| pos.into_py(py)))
+            Ok(Python::with_gil(|py| pos.into_pyobject(py).unwrap().to_owned().unbind()))
         })
     }
     
@@ -764,7 +765,7 @@ impl AsyncFile {
             }).await.map_err(|e| Python::with_gil(|py| io_err(py, std::io::Error::new(std::io::ErrorKind::Other, e))))?
               .map_err(|e| Python::with_gil(|py| io_err(py, e)))?;
             
-            Ok(Python::with_gil(|py| pos.into_py(py)))
+            Ok(Python::with_gil(|py| pos.into_pyobject(py).unwrap().to_owned().unbind()))
         })
     }
     
@@ -810,7 +811,7 @@ impl AsyncFile {
             }).await.map_err(|e| Python::with_gil(|py| io_err(py, std::io::Error::new(std::io::ErrorKind::Other, e))))?
               .map_err(|e| Python::with_gil(|py| io_err(py, e)))?;
             
-            Ok(Python::with_gil(|py| new_size.into_py(py)))
+            Ok(Python::with_gil(|py| new_size.into_pyobject(py).unwrap().to_owned().unbind()))
         })
     }
     

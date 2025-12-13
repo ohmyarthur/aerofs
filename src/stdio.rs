@@ -70,7 +70,7 @@ impl AsyncStdout {
             let mut stdout = io::stdout();
             stdout.flush().await
                 .map_err(|e| value_err(&e.to_string()))?;
-            Ok(Python::with_gil(|py| <() as pyo3::IntoPy<Py<PyAny>>>::into_py((), py)))
+            Ok(Python::with_gil(|py| py.None()))
         })
     }
 }
@@ -106,7 +106,7 @@ impl AsyncStderr {
             let mut stderr = io::stderr();
             stderr.flush().await
                 .map_err(|e| value_err(&e.to_string()))?;
-            Ok(Python::with_gil(|py| <() as pyo3::IntoPy<Py<PyAny>>>::into_py((), py)))
+            Ok(Python::with_gil(|py| py.None()))
         })
     }
 }
