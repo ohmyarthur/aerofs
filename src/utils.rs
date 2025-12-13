@@ -28,7 +28,7 @@ pub fn get_temp_dir() -> String {
 }
 
 pub fn path_to_string(path: &Bound<'_, PyAny>) -> PyResult<String> {
-    if let Ok(s) = path.downcast::<PyString>() {
+    if let Ok(s) = path.cast::<PyString>() {
         Ok(s.str()?.to_string())
     } else {
         if let Ok(has_fspath) = path.hasattr("__fspath__") {

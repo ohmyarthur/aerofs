@@ -10,9 +10,9 @@ pub fn stat<'a>(py: Python<'a>, path: Bound<'a, PyAny>) -> PyResult<Bound<'a, Py
     let path_str = path_to_string(&path)?;
     pyo3_async_runtimes::tokio::future_into_py(py, async move {
         let metadata = fs::metadata(&path_str).await
-            .map_err(|e| Python::with_gil(|py| os_err(py, e)))?;
+            .map_err(|e| Python::attach(|py| os_err(py, e)))?;
         
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let os_module = py.import("os")?;
             let stat_result = os_module.getattr("stat_result")?;
             
@@ -48,8 +48,8 @@ pub fn stat<'a>(py: Python<'a>, path: Bound<'a, PyAny>) -> PyResult<Bound<'a, Py
 pub fn remove<'a>(py: Python<'a>, path: String) -> PyResult<Bound<'a, PyAny>> {
     pyo3_async_runtimes::tokio::future_into_py(py, async move {
         fs::remove_file(&path).await
-            .map_err(|e| Python::with_gil(|py| os_err(py, e)))?;
-        Ok(Python::with_gil(|py| py.None()))
+            .map_err(|e| Python::attach(|py| os_err(py, e)))?;
+        Ok(Python::attach(|py| py.None()))
     })
 }
 
@@ -62,8 +62,8 @@ pub fn unlink<'a>(py: Python<'a>, path: String) -> PyResult<Bound<'a, PyAny>> {
 pub fn rename<'a>(py: Python<'a>, src: String, dst: String) -> PyResult<Bound<'a, PyAny>> {
     pyo3_async_runtimes::tokio::future_into_py(py, async move {
         fs::rename(&src, &dst).await
-            .map_err(|e| Python::with_gil(|py| os_err(py, e)))?;
-        Ok(Python::with_gil(|py| py.None()))
+            .map_err(|e| Python::attach(|py| os_err(py, e)))?;
+        Ok(Python::attach(|py| py.None()))
     })
 }
 
@@ -79,12 +79,12 @@ pub fn renames<'a>(py: Python<'a>, old: String, new: String) -> PyResult<Bound<'
             fs::create_dir_all(parent).await.ok();
         }
         fs::rename(&old, &new).await
-            .map_err(|e| Python::with_gil(|py| os_err(py, e)))?;
+            .map_err(|e| Python::attach(|py| os_err(py, e)))?;
         
         if let Some(parent) = std::path::Path::new(&old).parent() {
             fs::remove_dir(parent).await.ok();
         }
-        Ok(Python::with_gil(|py| py.None()))
+        Ok(Python::attach(|py| py.None()))
     })
 }
 
@@ -94,7 +94,7 @@ pub fn removedirs<'a>(py: Python<'a>, name: String) -> PyResult<Bound<'a, PyAny>
         let mut path = std::path::PathBuf::from(&name);
         loop {
             fs::remove_dir(&path).await
-                .map_err(|e| Python::with_gil(|py| os_err(py, e)))?;
+                .map_err(|e| Python::attach(|py| os_err(py, e)))?;
             
             if let Some(parent) = path.parent() {
                 if parent.as_os_str().is_empty() {
@@ -105,7 +105,7 @@ pub fn removedirs<'a>(py: Python<'a>, name: String) -> PyResult<Bound<'a, PyAny>
                 break;
             }
         }
-        Ok(Python::with_gil(|py| py.None()))
+        Ok(Python::attach(|py| py.None()))
     })
 }
 
@@ -114,8 +114,8 @@ pub fn removedirs<'a>(py: Python<'a>, name: String) -> PyResult<Bound<'a, PyAny>
 pub fn symlink<'a>(py: Python<'a>, src: String, dst: String) -> PyResult<Bound<'a, PyAny>> {
     pyo3_async_runtimes::tokio::future_into_py(py, async move {
         tokio::fs::symlink(&src, &dst).await
-            .map_err(|e| Python::with_gil(|py| os_err(py, e)))?;
-        Ok(Python::with_gil(|py| py.None()))
+            .map_err(|e| Python::attach(|py| os_err(py, e)))?;
+        Ok(Python::attach(|py| py.None()))
     })
 }
 
@@ -124,8 +124,8 @@ pub fn symlink<'a>(py: Python<'a>, src: String, dst: String) -> PyResult<Bound<'
 pub fn readlink<'a>(py: Python<'a>, path: String) -> PyResult<Bound<'a, PyAny>> {
     pyo3_async_runtimes::tokio::future_into_py(py, async move {
         let target = tokio::fs::read_link(&path).await
-            .map_err(|e| Python::with_gil(|py| os_err(py, e)))?;
-        Python::with_gil(|py| {
+            .map_err(|e| Python::attach(|py| os_err(py, e)))?;
+        Python::attach(|py| {
             Ok(PyString::new(py, &target.to_string_lossy()).unbind())
         })
     })
@@ -136,8 +136,8 @@ pub fn readlink<'a>(py: Python<'a>, path: String) -> PyResult<Bound<'a, PyAny>> 
 pub fn link<'a>(py: Python<'a>, src: String, dst: String) -> PyResult<Bound<'a, PyAny>> {
     pyo3_async_runtimes::tokio::future_into_py(py, async move {
         tokio::fs::hard_link(&src, &dst).await
-            .map_err(|e| Python::with_gil(|py| os_err(py, e)))?;
-        Ok(Python::with_gil(|py| py.None()))
+            .map_err(|e| Python::attach(|py| os_err(py, e)))?;
+        Ok(Python::attach(|py| py.None()))
     })
 }
 
@@ -149,12 +149,12 @@ pub fn access<'a>(py: Python<'a>, path: Bound<'a, PyAny>, mode: i32) -> PyResult
         
         if mode == 0 {
             let exists = metadata.is_ok();
-            return Ok(Python::with_gil(|py| exists.into_pyobject(py).unwrap().to_owned().unbind()));
+            return Ok(Python::attach(|py| exists.into_pyobject(py).unwrap().to_owned().unbind()));
         }
         
         let metadata = match metadata {
             Ok(meta) => meta,
-            Err(_) => return Ok(Python::with_gil(|py| false.into_pyobject(py).unwrap().to_owned().unbind())),
+            Err(_) => return Ok(Python::attach(|py| false.into_pyobject(py).unwrap().to_owned().unbind())),
         };
         
         #[cfg(unix)]
@@ -169,12 +169,12 @@ pub fn access<'a>(py: Python<'a>, path: Bound<'a, PyAny>, mode: i32) -> PyResult
                 _ => false,               // Invalid mode
             };
             
-            Ok(Python::with_gil(|py| accessible.into_pyobject(py).unwrap().to_owned().unbind()))
+            Ok(Python::attach(|py| accessible.into_pyobject(py).unwrap().to_owned().unbind()))
         }
         
         #[cfg(not(unix))]
         {
-            Ok(Python::with_gil(|py| true.into_pyobject(py).unwrap().to_owned().unbind()))
+            Ok(Python::attach(|py| true.into_pyobject(py).unwrap().to_owned().unbind()))
         }
     })
 }
@@ -215,7 +215,7 @@ pub fn scandir<'a>(py: Python<'a>, path: Option<String>) -> PyResult<Bound<'a, P
     pyo3_async_runtimes::tokio::future_into_py(py, async move {
         let metadata = tokio::fs::metadata(&path_str).await
             .map_err(|e| {
-                Python::with_gil(|py| {
+                Python::attach(|py| {
                     if e.kind() == std::io::ErrorKind::NotFound {
                         pyo3::exceptions::PyFileNotFoundError::new_err(format!("[Errno 2] No such file or directory: '{}'", path_str))
                     } else {
@@ -225,19 +225,19 @@ pub fn scandir<'a>(py: Python<'a>, path: Option<String>) -> PyResult<Bound<'a, P
             })?;
         
         if !metadata.is_dir() {
-            return Err(Python::with_gil(|_py| {
+            return Err(Python::attach(|_py| {
                 pyo3::exceptions::PyNotADirectoryError::new_err(format!("[Errno 20] Not a directory: '{}'", path_str))
             }));
         }
         
         let mut entries_list = Vec::new();
         let mut dir_entries = fs::read_dir(&path_str).await
-            .map_err(|e| Python::with_gil(|py| os_err(py, e)))?;
+            .map_err(|e| Python::attach(|py| os_err(py, e)))?;
         
         while let Some(entry) = dir_entries.next_entry().await
-            .map_err(|e| Python::with_gil(|py| os_err(py, e)))? {
+            .map_err(|e| Python::attach(|py| os_err(py, e)))? {
             let metadata = entry.metadata().await
-                .map_err(|e| Python::with_gil(|py| os_err(py, e)))?;
+                .map_err(|e| Python::attach(|py| os_err(py, e)))?;
             
             let dir_entry = AsyncDirEntry {
                 name: entry.file_name().to_string_lossy().to_string(),
@@ -248,7 +248,7 @@ pub fn scandir<'a>(py: Python<'a>, path: Option<String>) -> PyResult<Bound<'a, P
             entries_list.push(dir_entry);
         }
         
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let list = PyList::empty(py);
             for entry in entries_list {
                 list.append(Py::new(py, entry)?)?;
@@ -263,8 +263,8 @@ pub fn scandir<'a>(py: Python<'a>, path: Option<String>) -> PyResult<Bound<'a, P
 pub fn mkdir<'a>(py: Python<'a>, path: String, _mode: Option<u32>) -> PyResult<Bound<'a, PyAny>> {
     pyo3_async_runtimes::tokio::future_into_py(py, async move {
         fs::create_dir(&path).await
-            .map_err(|e| Python::with_gil(|py| os_err(py, e)))?;
-        Ok(Python::with_gil(|py| py.None()))
+            .map_err(|e| Python::attach(|py| os_err(py, e)))?;
+        Ok(Python::attach(|py| py.None()))
     })
 }
 
@@ -274,9 +274,9 @@ pub fn makedirs<'a>(py: Python<'a>, path: String, _mode: Option<u32>, exist_ok: 
     let exist_ok = exist_ok.unwrap_or(false);
     pyo3_async_runtimes::tokio::future_into_py(py, async move {
         match fs::create_dir_all(&path).await {
-            Ok(_) => Ok(Python::with_gil(|py| py.None())),
-            Err(e) if exist_ok && e.kind() == std::io::ErrorKind::AlreadyExists => Ok(Python::with_gil(|py| py.None())),
-            Err(e) => Err(Python::with_gil(|py| os_err(py, e)))
+            Ok(_) => Ok(Python::attach(|py| py.None())),
+            Err(e) if exist_ok && e.kind() == std::io::ErrorKind::AlreadyExists => Ok(Python::attach(|py| py.None())),
+            Err(e) => Err(Python::attach(|py| os_err(py, e)))
         }
     })
 }
@@ -285,8 +285,8 @@ pub fn makedirs<'a>(py: Python<'a>, path: String, _mode: Option<u32>, exist_ok: 
 pub fn rmdir<'a>(py: Python<'a>, path: String) -> PyResult<Bound<'a, PyAny>> {
     pyo3_async_runtimes::tokio::future_into_py(py, async move {
         fs::remove_dir(&path).await
-            .map_err(|e| Python::with_gil(|py| os_err(py, e)))?;
-        Ok(Python::with_gil(|py| py.None()))
+            .map_err(|e| Python::attach(|py| os_err(py, e)))?;
+        Ok(Python::attach(|py| py.None()))
     })
 }
 
@@ -297,7 +297,7 @@ pub fn listdir<'a>(py: Python<'a>, path: Option<String>) -> PyResult<Bound<'a, P
     pyo3_async_runtimes::tokio::future_into_py(py, async move {
         let metadata = tokio::fs::metadata(&path_str).await
             .map_err(|e| {
-                Python::with_gil(|py| {
+                Python::attach(|py| {
                     if e.kind() == std::io::ErrorKind::NotFound {
                         pyo3::exceptions::PyFileNotFoundError::new_err(format!("[Errno 2] No such file or directory: '{}'", path_str))
                     } else {
@@ -307,21 +307,21 @@ pub fn listdir<'a>(py: Python<'a>, path: Option<String>) -> PyResult<Bound<'a, P
             })?;
         
         if !metadata.is_dir() {
-            return Err(Python::with_gil(|_py| {
+            return Err(Python::attach(|_py| {
                 pyo3::exceptions::PyNotADirectoryError::new_err(format!("[Errno 20] Not a directory: '{}'", path_str))
             }));
         }
         
         let mut entries = fs::read_dir(&path_str).await
-            .map_err(|e| Python::with_gil(|py| os_err(py, e)))?;
+            .map_err(|e| Python::attach(|py| os_err(py, e)))?;
         
         let mut names = Vec::new();
         while let Some(entry) = entries.next_entry().await
-            .map_err(|e| Python::with_gil(|py| os_err(py, e)))? {
+            .map_err(|e| Python::attach(|py| os_err(py, e)))? {
             names.push(entry.file_name().to_string_lossy().to_string());
         }
         
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let list = PyList::empty(py);
             for name in names {
                 list.append(PyString::new(py, &name))?;
@@ -335,8 +335,8 @@ pub fn listdir<'a>(py: Python<'a>, path: Option<String>) -> PyResult<Bound<'a, P
 pub fn getcwd<'a>(py: Python<'a>) -> PyResult<Bound<'a, PyAny>> {
     pyo3_async_runtimes::tokio::future_into_py(py, async move {
         let cwd = std::env::current_dir()
-            .map_err(|e| Python::with_gil(|py| os_err(py, e)))?;
-        Python::with_gil(|py| {
+            .map_err(|e| Python::attach(|py| os_err(py, e)))?;
+        Python::attach(|py| {
             Ok(PyString::new(py, &cwd.to_string_lossy()).unbind())
         })
     })
@@ -349,7 +349,7 @@ mod path {
     pub fn exists<'a>(py: Python<'a>, path: String) -> PyResult<Bound<'a, PyAny>> {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let exists = fs::try_exists(&path).await.unwrap_or(false);
-            Ok(Python::with_gil(|py| exists.into_pyobject(py).unwrap().to_owned().unbind()))
+            Ok(Python::attach(|py| exists.into_pyobject(py).unwrap().to_owned().unbind()))
         })
     }
     
@@ -359,7 +359,7 @@ mod path {
             let is_file = fs::metadata(&path).await
                 .map(|m| m.is_file())
                 .unwrap_or(false);
-            Ok(Python::with_gil(|py| is_file.into_pyobject(py).unwrap().to_owned().unbind()))
+            Ok(Python::attach(|py| is_file.into_pyobject(py).unwrap().to_owned().unbind()))
         })
     }
     
@@ -369,7 +369,7 @@ mod path {
             let is_dir = fs::metadata(&path).await
                 .map(|m| m.is_dir())
                 .unwrap_or(false);
-            Ok(Python::with_gil(|py| is_dir.into_pyobject(py).unwrap().to_owned().unbind()))
+            Ok(Python::attach(|py| is_dir.into_pyobject(py).unwrap().to_owned().unbind()))
         })
     }
     
@@ -377,9 +377,9 @@ mod path {
     pub fn getsize<'a>(py: Python<'a>, path: String) -> PyResult<Bound<'a, PyAny>> {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let size = fs::metadata(&path).await
-                .map_err(|e| Python::with_gil(|py| os_err(py, e)))?
+                .map_err(|e| Python::attach(|py| os_err(py, e)))?
                 .len();
-            Ok(Python::with_gil(|py| size.into_pyobject(py).unwrap().to_owned().unbind()))
+            Ok(Python::attach(|py| size.into_pyobject(py).unwrap().to_owned().unbind()))
         })
     }
     
@@ -387,8 +387,8 @@ mod path {
     pub fn abspath<'a>(py: Python<'a>, path: String) -> PyResult<Bound<'a, PyAny>> {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let absolute = std::fs::canonicalize(&path)
-                .map_err(|e| Python::with_gil(|py| os_err(py, e)))?;
-            Python::with_gil(|py| {
+                .map_err(|e| Python::attach(|py| os_err(py, e)))?;
+            Python::attach(|py| {
                 Ok(PyString::new(py, &absolute.to_string_lossy()).unbind())
             })
         })
@@ -400,7 +400,7 @@ mod path {
             let is_link = fs::symlink_metadata(&path).await
                 .map(|m| m.is_symlink())
                 .unwrap_or(false);
-            Ok(Python::with_gil(|py| is_link.into_pyobject(py).unwrap().to_owned().unbind()))
+            Ok(Python::attach(|py| is_link.into_pyobject(py).unwrap().to_owned().unbind()))
         })
     }
     
@@ -408,13 +408,13 @@ mod path {
     pub fn getmtime<'a>(py: Python<'a>, path: String) -> PyResult<Bound<'a, PyAny>> {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let metadata = fs::metadata(&path).await
-                .map_err(|e| Python::with_gil(|py| os_err(py, e)))?;
+                .map_err(|e| Python::attach(|py| os_err(py, e)))?;
             let mtime = metadata.modified()
-                .map_err(|e| Python::with_gil(|py| os_err(py, e)))?
+                .map_err(|e| Python::attach(|py| os_err(py, e)))?
                 .duration_since(std::time::UNIX_EPOCH)
                 .map_err(|e| value_err(&e.to_string()))?
                 .as_secs_f64();
-            Ok(Python::with_gil(|py| mtime.into_pyobject(py).unwrap().to_owned().unbind()))
+            Ok(Python::attach(|py| mtime.into_pyobject(py).unwrap().to_owned().unbind()))
         })
     }
     
@@ -422,13 +422,13 @@ mod path {
     pub fn getatime<'a>(py: Python<'a>, path: String) -> PyResult<Bound<'a, PyAny>> {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let metadata = fs::metadata(&path).await
-                .map_err(|e| Python::with_gil(|py| os_err(py, e)))?;
+                .map_err(|e| Python::attach(|py| os_err(py, e)))?;
             let atime = metadata.accessed()
-                .map_err(|e| Python::with_gil(|py| os_err(py, e)))?
+                .map_err(|e| Python::attach(|py| os_err(py, e)))?
                 .duration_since(std::time::UNIX_EPOCH)
                 .map_err(|e| value_err(&e.to_string()))?
                 .as_secs_f64();
-            Ok(Python::with_gil(|py| atime.into_pyobject(py).unwrap().to_owned().unbind()))
+            Ok(Python::attach(|py| atime.into_pyobject(py).unwrap().to_owned().unbind()))
         })
     }
     
@@ -436,20 +436,20 @@ mod path {
     pub fn getctime<'a>(py: Python<'a>, path: String) -> PyResult<Bound<'a, PyAny>> {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let metadata = fs::metadata(&path).await
-                .map_err(|e| Python::with_gil(|py| os_err(py, e)))?;
+                .map_err(|e| Python::attach(|py| os_err(py, e)))?;
             let ctime = metadata.created()
-                .map_err(|e| Python::with_gil(|py| os_err(py, e)))?
+                .map_err(|e| Python::attach(|py| os_err(py, e)))?
                 .duration_since(std::time::UNIX_EPOCH)
                 .map_err(|e| value_err(&e.to_string()))?
                 .as_secs_f64();
-            Ok(Python::with_gil(|py| ctime.into_pyobject(py).unwrap().to_owned().unbind()))
+            Ok(Python::attach(|py| ctime.into_pyobject(py).unwrap().to_owned().unbind()))
         })
     }
     
     #[pyfunction]
     pub fn ismount<'a>(py: Python<'a>, path: String) -> PyResult<Bound<'a, PyAny>> {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 let os_path = py.import("os.path")?;
                 let result = os_path.call_method1("ismount", (&path,))?;
                 Ok(result.unbind())
@@ -460,7 +460,7 @@ mod path {
     #[pyfunction]
     pub fn samefile<'a>(py: Python<'a>, path1: String, path2: String) -> PyResult<Bound<'a, PyAny>> {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 let os_path = py.import("os.path")?;
                 let result = os_path.call_method1("samefile", (&path1, &path2))?;
                 Ok(result.unbind())
@@ -471,7 +471,7 @@ mod path {
     #[pyfunction]
     pub fn sameopenfile<'a>(py: Python<'a>, fd1: i32, fd2: i32) -> PyResult<Bound<'a, PyAny>> {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 let os_path = py.import("os.path")?;
                 let result = os_path.call_method1("sameopenfile", (fd1, fd2))?;
                 Ok(result.unbind())
@@ -484,7 +484,7 @@ mod path {
 #[pyfunction]
 pub fn statvfs<'a>(py: Python<'a>, path: String) -> PyResult<Bound<'a, PyAny>> {
     pyo3_async_runtimes::tokio::future_into_py(py, async move {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let os_module = py.import("os")?;
             let result = os_module.call_method1("statvfs", (&path,))?;
             Ok(result.unbind())
@@ -497,7 +497,7 @@ pub fn statvfs<'a>(py: Python<'a>, path: String) -> PyResult<Bound<'a, PyAny>> {
 #[pyo3(signature = (out_fd, in_fd, offset, count))]
 pub fn sendfile<'a>(py: Python<'a>, out_fd: i32, in_fd: i32, offset: Option<i64>, count: i64) -> PyResult<Bound<'a, PyAny>> {
     pyo3_async_runtimes::tokio::future_into_py(py, async move {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let os_module = py.import("os")?;
             let result = if let Some(off) = offset {
                 os_module.call_method1("sendfile", (out_fd, in_fd, off, count))?

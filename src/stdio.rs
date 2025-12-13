@@ -27,7 +27,7 @@ impl AsyncStdin {
             reader.read_until(b'\n', &mut buffer).await
                 .map_err(|e| value_err(&e.to_string()))?;
             
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 if is_bytes {
                     Ok(PyBytes::new(py, &buffer).into_any().unbind())
                 } else {
@@ -51,7 +51,7 @@ impl AsyncStdout {
         let data_py = data.unbind();
         
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 let sys = py.import("sys")?;
                 let stdout = if is_bytes {
                     sys.getattr("stdout")?.getattr("buffer")?
@@ -70,7 +70,7 @@ impl AsyncStdout {
             let mut stdout = io::stdout();
             stdout.flush().await
                 .map_err(|e| value_err(&e.to_string()))?;
-            Ok(Python::with_gil(|py| py.None()))
+            Ok(Python::attach(|py| py.None()))
         })
     }
 }
@@ -87,7 +87,7 @@ impl AsyncStderr {
         let data_py = data.unbind();
         
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 let sys = py.import("sys")?;
                 let stderr = if is_bytes {
                     sys.getattr("stderr")?.getattr("buffer")?
@@ -106,7 +106,7 @@ impl AsyncStderr {
             let mut stderr = io::stderr();
             stderr.flush().await
                 .map_err(|e| value_err(&e.to_string()))?;
-            Ok(Python::with_gil(|py| py.None()))
+            Ok(Python::attach(|py| py.None()))
         })
     }
 }

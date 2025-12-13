@@ -50,9 +50,9 @@ impl AsyncTemporaryFile {
             crate::utils::configure_file_options_async(&mut opts, mode_str, true)?;
             
             let file = opts.open(&path).await
-                .map_err(|e| Python::with_gil(|py| io_err(py, e)))?;
+                .map_err(|e| Python::attach(|py| io_err(py, e)))?;
             
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 let mut obj = py_obj.borrow_mut(py);
                 obj.file = Some(Arc::new(Mutex::new(file)));
                 obj.path = path;
@@ -81,13 +81,13 @@ impl AsyncTemporaryFile {
             
             tokio::fs::remove_file(&path).await.ok();
             
-            Ok(Python::with_gil(|py| py.None()))
+            Ok(Python::attach(|py| py.None()))
         })
     }
     
     fn close<'a>(&mut self, py: Python<'a>) -> PyResult<Bound<'a, PyAny>> {
         if self.closed {
-            return pyo3_async_runtimes::tokio::future_into_py(py, async { Ok(Python::with_gil(|py| py.None())) });
+            return pyo3_async_runtimes::tokio::future_into_py(py, async { Ok(Python::attach(|py| py.None())) });
         }
         
         let file = self.file.take();
@@ -106,7 +106,7 @@ impl AsyncTemporaryFile {
                 tokio::fs::remove_file(&path).await.ok();
             }
             
-            Ok(Python::with_gil(|py| py.None()))
+            Ok(Python::attach(|py| py.None()))
         })
     }
     
@@ -132,21 +132,21 @@ impl AsyncTemporaryFile {
             let data = if let Some(n) = size {
                 if n < 0 {
                     let mut buffer = Vec::new();
-                    f.read_to_end(&mut buffer).await.map_err(|e| Python::with_gil(|py| io_err(py, e)))?;
+                    f.read_to_end(&mut buffer).await.map_err(|e| Python::attach(|py| io_err(py, e)))?;
                     buffer
                 } else {
                     let mut buffer = vec![0u8; n as usize];
-                    let bytes_read = f.read(&mut buffer).await.map_err(|e| Python::with_gil(|py| io_err(py, e)))?;
+                    let bytes_read = f.read(&mut buffer).await.map_err(|e| Python::attach(|py| io_err(py, e)))?;
                     buffer.truncate(bytes_read);
                     buffer
                 }
             } else {
                 let mut buffer = Vec::new();
-                f.read_to_end(&mut buffer).await.map_err(|e| Python::with_gil(|py| io_err(py, e)))?;
+                f.read_to_end(&mut buffer).await.map_err(|e| Python::attach(|py| io_err(py, e)))?;
                 buffer
             };
             
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 if is_binary {
                     Ok(pyo3::types::PyBytes::new(py, &data).into_any().unbind())
                 } else {
@@ -178,11 +178,11 @@ impl AsyncTemporaryFile {
             let mut temp_buffer = vec![0u8; buffer_len];
             
             let bytes_read = f.read(&mut temp_buffer).await
-                .map_err(|e| Python::with_gil(|py| io_err(py, e)))?;
+                .map_err(|e| Python::attach(|py| io_err(py, e)))?;
             
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 let buffer = buffer_py.bind(py);
-                if let Ok(bytearray) = buffer.downcast::<pyo3::types::PyByteArray>() {
+                if let Ok(bytearray) = buffer.cast::<pyo3::types::PyByteArray>() {
                     let current_len = bytearray.len();
                     let write_len = std::cmp::min(current_len, bytes_read);
                     
@@ -211,9 +211,9 @@ impl AsyncTemporaryFile {
             .ok_or_else(|| value_err("File not open"))?
             .clone();
         
-        let bytes = if let Ok(s) = data.downcast::<PyString>() {
+        let bytes = if let Ok(s) = data.cast::<PyString>() {
             s.str()?.to_string().into_bytes()
-        } else if let Ok(b) = data.downcast::<pyo3::types::PyBytes>() {
+        } else if let Ok(b) = data.cast::<pyo3::types::PyBytes>() {
             b.as_bytes().to_vec()
         } else {
             return Err(value_err("expected str or bytes"));
@@ -221,8 +221,8 @@ impl AsyncTemporaryFile {
         
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let mut f = file_arc.lock().await;
-            let written = f.write(&bytes).await.map_err(|e| Python::with_gil(|py| io_err(py, e)))?;
-            Ok(Python::with_gil(|py| written.into_pyobject(py).unwrap().to_owned().unbind()))
+            let written = f.write(&bytes).await.map_err(|e| Python::attach(|py| io_err(py, e)))?;
+            Ok(Python::attach(|py| written.into_pyobject(py).unwrap().to_owned().unbind()))
         })
     }
     
@@ -241,8 +241,8 @@ impl AsyncTemporaryFile {
         
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let mut f = file_arc.lock().await;
-            f.flush().await.map_err(|e| Python::with_gil(|py| io_err(py, e)))?;
-            Ok(Python::with_gil(|py| py.None()))
+            f.flush().await.map_err(|e| Python::attach(|py| io_err(py, e)))?;
+            Ok(Python::attach(|py| py.None()))
         })
     }
     
@@ -271,8 +271,8 @@ impl AsyncTemporaryFile {
                 _ => return Err(value_err("invalid whence value")),
             };
             
-            let new_pos = f.seek(pos).await.map_err(|e| Python::with_gil(|py| io_err(py, e)))?;
-            Ok(Python::with_gil(|py| new_pos.into_pyobject(py).unwrap().to_owned().unbind()))
+            let new_pos = f.seek(pos).await.map_err(|e| Python::attach(|py| io_err(py, e)))?;
+            Ok(Python::attach(|py| new_pos.into_pyobject(py).unwrap().to_owned().unbind()))
         })
     }
     
@@ -314,17 +314,17 @@ impl AsyncTemporaryFile {
                 
                 match buf_reader.read_until(b'\n', &mut line_bytes).await {
                     Ok(0) => {
-                        return Python::with_gil(|_py| {
+                        return Python::attach(|_py| {
                             Err(pyo3::exceptions::PyStopAsyncIteration::new_err(""))
                         });
                     }
                     Ok(_) => {
-                        Python::with_gil(|py| {
+                        Python::attach(|py| {
                             Ok(pyo3::types::PyBytes::new(py, &line_bytes).into_any().unbind())
                         })
                     }
                     Err(e) => {
-                        Python::with_gil(|py| {
+                        Python::attach(|py| {
                             Err(io_err(py, e))
                         })
                     }
@@ -336,17 +336,17 @@ impl AsyncTemporaryFile {
                 
                 match buf_reader.read_line(&mut line_str).await {
                     Ok(0) => {
-                        return Python::with_gil(|_py| {
+                        return Python::attach(|_py| {
                             Err(pyo3::exceptions::PyStopAsyncIteration::new_err(""))
                         });
                     }
                     Ok(_) => {
-                        Python::with_gil(|py| {
+                        Python::attach(|py| {
                             Ok(PyString::new(py, &line_str).into_any().unbind())
                         })
                     }
                     Err(e) => {
-                        Python::with_gil(|py| {
+                        Python::attach(|py| {
                             Err(io_err(py, e))
                         })
                     }
@@ -383,9 +383,9 @@ impl AsyncTemporaryDirectory {
             let path = PathBuf::from(temp_dir).join(&dirname);
             
             tokio::fs::create_dir(&path).await
-                .map_err(|e| Python::with_gil(|py| io_err(py, e)))?;
+                .map_err(|e| Python::attach(|py| io_err(py, e)))?;
             
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 let mut obj = py_obj.borrow_mut(py);
                 obj.path = Some(path);
                 
@@ -411,7 +411,7 @@ impl AsyncTemporaryDirectory {
             if let Some(p) = path {
                 tokio::fs::remove_dir_all(&p).await.ok();
             }
-            Ok(Python::with_gil(|py| py.None()))
+            Ok(Python::attach(|py| py.None()))
         })
     }
     
@@ -421,9 +421,9 @@ impl AsyncTemporaryDirectory {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             if let Some(p) = path {
                 tokio::fs::remove_dir_all(&p).await
-                    .map_err(|e| Python::with_gil(|py| io_err(py, e)))?;
+                    .map_err(|e| Python::attach(|py| io_err(py, e)))?;
             }
-            Ok(Python::with_gil(|py| py.None()))
+            Ok(Python::attach(|py| py.None()))
         })
     }
     
@@ -474,7 +474,7 @@ pub fn temporary_directory<'a>(
 ) -> PyResult<AsyncTemporaryDirectory> {
     let dir_str = if let Some(dir_path) = dir {
         // Convert PathLike objects to string
-        if let Ok(s) = dir_path.downcast::<PyString>() {
+        if let Ok(s) = dir_path.cast::<PyString>() {
             Some(s.str()?.to_string())
         } else {
             if let Ok(has_fspath) = dir_path.hasattr("__fspath__") {
@@ -512,7 +512,7 @@ pub fn spooled_temporary_file<'a>(
     suffix: Option<String>,
     prefix: Option<String>,
     dir: Option<String>,
-) -> PyResult<PyObject> {
+) -> PyResult<Py<PyAny>> {
     let tempfile_module = py.import("tempfile")
         .map_err(|e| PyErr::from(e))?;
     let spooled_class = tempfile_module.getattr("SpooledTemporaryFile")

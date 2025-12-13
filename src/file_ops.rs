@@ -144,8 +144,8 @@ impl AsyncFile {
                 } else {
                     Ok(FileState::Raw(file))
                 }
-            }).await.map_err(|e| Python::with_gil(|py| io_err(py, std::io::Error::new(std::io::ErrorKind::Other, e))))?
-              .map_err(|e: std::io::Error| Python::with_gil(|_py| {
+            }).await.map_err(|e| Python::attach(|py| io_err(py, std::io::Error::new(std::io::ErrorKind::Other, e))))?
+              .map_err(|e: std::io::Error| Python::attach(|_py| {
                   let errno = e.raw_os_error();
                   let msg = match e.kind() {
                       std::io::ErrorKind::NotFound => format!("No such file or directory: '{}'", path.display()),
@@ -155,7 +155,7 @@ impl AsyncFile {
                   pyo3::exceptions::PyOSError::new_err((errno, msg))
               }))?;
             
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 let mut obj = py_obj.borrow_mut(py);
                 obj.file = Some(Arc::new(Mutex::new(file_state)));
                 Ok(py_obj.clone_ref(py))
@@ -205,12 +205,12 @@ impl AsyncFile {
             if let Some(file_arc) = file {
                 tokio::task::spawn_blocking(move || {
                     let mut state = file_arc.blocking_lock();
-                    state.write_buffer(&buffer).map_err(|e| Python::with_gil(|py| io_err(py, e)))?;
+                    state.write_buffer(&buffer).map_err(|e| Python::attach(|py| io_err(py, e)))?;
                     state.flush_file().ok();
                     Ok::<(), PyErr>(())
-                }).await.map_err(|e| Python::with_gil(|py| io_err(py, std::io::Error::new(std::io::ErrorKind::Other, e))))??;
+                }).await.map_err(|e| Python::attach(|py| io_err(py, std::io::Error::new(std::io::ErrorKind::Other, e))))??;
             }
-            Ok(Python::with_gil(|py| py.None()))
+            Ok(Python::attach(|py| py.None()))
         })
     }
     
@@ -227,12 +227,12 @@ impl AsyncFile {
             if let Some(file_arc) = file_handle {
                 tokio::task::spawn_blocking(move || {
                     let mut state = file_arc.blocking_lock();
-                    state.write_buffer(&buffer).map_err(|e| Python::with_gil(|py| io_err(py, e)))?;
-                    state.flush_file().map_err(|e| Python::with_gil(|py| io_err(py, e)))?;
+                    state.write_buffer(&buffer).map_err(|e| Python::attach(|py| io_err(py, e)))?;
+                    state.flush_file().map_err(|e| Python::attach(|py| io_err(py, e)))?;
                     Ok::<(), PyErr>(())
-                }).await.map_err(|e| Python::with_gil(|py| io_err(py, std::io::Error::new(std::io::ErrorKind::Other, e))))??;
+                }).await.map_err(|e| Python::attach(|py| io_err(py, std::io::Error::new(std::io::ErrorKind::Other, e))))??;
             }
-            Ok(Python::with_gil(|py| py.None()))
+            Ok(Python::attach(|py| py.None()))
         })
     }
     
@@ -257,10 +257,10 @@ impl AsyncFile {
                 state.write_buffer(&buffer)?;
                 state.flush_file()?;
                 Ok::<(), std::io::Error>(())
-            }).await.map_err(|e| Python::with_gil(|py| io_err(py, std::io::Error::new(std::io::ErrorKind::Other, e))))?
-              .map_err(|e| Python::with_gil(|py| io_err(py, e)))?;
+            }).await.map_err(|e| Python::attach(|py| io_err(py, std::io::Error::new(std::io::ErrorKind::Other, e))))?
+              .map_err(|e| Python::attach(|py| io_err(py, e)))?;
             
-            Ok(Python::with_gil(|py| py.None()))
+            Ok(Python::attach(|py| py.None()))
         })
     }
     
@@ -289,7 +289,7 @@ impl AsyncFile {
                 if n >= 0 {
                     let size = n as usize;
                     
-                    let (bytes_obj, buffer_ptr) = Python::with_gil(|py| {
+                    let (bytes_obj, buffer_ptr) = Python::attach(|py| {
                         unsafe {
                             let ptr = ffi::PyBytes_FromStringAndSize(std::ptr::null(), size as isize);
                             if ptr.is_null() {
@@ -308,11 +308,11 @@ impl AsyncFile {
                         let mut state = file_arc_clone.blocking_lock();
                         let buffer_slice = unsafe { std::slice::from_raw_parts_mut(buffer_ptr_int as *mut u8, size) };
                         state.read_bytes(buffer_slice)
-                    }).await.map_err(|e| Python::with_gil(|py| io_err(py, std::io::Error::new(std::io::ErrorKind::Other, e))))?
-                      .map_err(|e| Python::with_gil(|py| io_err(py, e)))?;
+                    }).await.map_err(|e| Python::attach(|py| io_err(py, std::io::Error::new(std::io::ErrorKind::Other, e))))?
+                      .map_err(|e| Python::attach(|py| io_err(py, e)))?;
                     
                     if bytes_read < size {
-                        return Python::with_gil(|py| {
+                        return Python::attach(|py| {
                             
                             
                             let _bytes_ref = bytes_obj.bind(py);
@@ -328,7 +328,7 @@ impl AsyncFile {
                             }
                         });
                     } else {
-                        return Python::with_gil(|py| {
+                        return Python::attach(|py| {
                             if is_binary {
                                 Ok(bytes_obj.into_any())
                             } else {
@@ -347,10 +347,10 @@ impl AsyncFile {
                 let mut buffer = Vec::with_capacity(BUFFER_SIZE);
                 state.read_all(&mut buffer)?;
                 Ok::<Vec<u8>, std::io::Error>(buffer)
-            }).await.map_err(|e| Python::with_gil(|py| io_err(py, std::io::Error::new(std::io::ErrorKind::Other, e))))?
-              .map_err(|e| Python::with_gil(|py| io_err(py, e)))?;
+            }).await.map_err(|e| Python::attach(|py| io_err(py, std::io::Error::new(std::io::ErrorKind::Other, e))))?
+              .map_err(|e| Python::attach(|py| io_err(py, e)))?;
             
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 if is_binary {
                     Ok(PyBytes::new(py, &buffer).into_any().unbind())
                 } else {
@@ -384,10 +384,10 @@ impl AsyncFile {
                 let bytes_read = state.read_bytes(&mut buffer)?;
                 buffer.truncate(bytes_read);
                 Ok::<Vec<u8>, std::io::Error>(buffer)
-            }).await.map_err(|e| Python::with_gil(|py| io_err(py, std::io::Error::new(std::io::ErrorKind::Other, e))))?
-              .map_err(|e| Python::with_gil(|py| io_err(py, e)))?;
+            }).await.map_err(|e| Python::attach(|py| io_err(py, std::io::Error::new(std::io::ErrorKind::Other, e))))?
+              .map_err(|e| Python::attach(|py| io_err(py, e)))?;
             
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 if is_binary {
                     Ok(PyBytes::new(py, &buffer).into_any().unbind())
                 } else {
@@ -443,10 +443,10 @@ impl AsyncFile {
                     state.read_line(&mut line)?
                 };
                 Ok::<Vec<u8>, std::io::Error>(line)
-            }).await.map_err(|e| Python::with_gil(|py| io_err(py, std::io::Error::new(std::io::ErrorKind::Other, e))))?
-              .map_err(|e| Python::with_gil(|py| io_err(py, e)))?;
+            }).await.map_err(|e| Python::attach(|py| io_err(py, std::io::Error::new(std::io::ErrorKind::Other, e))))?
+              .map_err(|e| Python::attach(|py| io_err(py, e)))?;
             
-            Python::with_gil(|py| {
+            Python::attach(|py| {
             if is_binary {
                     Ok(PyBytes::new(py, &line).into_any().unbind())
                 } else {
@@ -511,10 +511,10 @@ impl AsyncFile {
                     }
                 }
                 Ok::<Vec<Vec<u8>>, std::io::Error>(lines)
-            }).await.map_err(|e| Python::with_gil(|py| io_err(py, std::io::Error::new(std::io::ErrorKind::Other, e))))?
-              .map_err(|e| Python::with_gil(|py| io_err(py, e)))?;
+            }).await.map_err(|e| Python::attach(|py| io_err(py, std::io::Error::new(std::io::ErrorKind::Other, e))))?
+              .map_err(|e| Python::attach(|py| io_err(py, e)))?;
             
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 let list = PyList::empty(py);
                 for line in lines {
                     if is_binary {
@@ -558,12 +558,12 @@ impl AsyncFile {
                 }?;
                 
                 Ok::<(usize, Vec<u8>), std::io::Error>((n, temp_buffer))
-            }).await.map_err(|e| Python::with_gil(|py| io_err(py, std::io::Error::new(std::io::ErrorKind::Other, e))))?
-              .map_err(|e| Python::with_gil(|py| io_err(py, e)))?;
+            }).await.map_err(|e| Python::attach(|py| io_err(py, std::io::Error::new(std::io::ErrorKind::Other, e))))?
+              .map_err(|e| Python::attach(|py| io_err(py, e)))?;
             
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 let buffer = buffer_py.bind(py);
-                if let Ok(bytearray) = buffer.downcast::<PyByteArray>() {
+                if let Ok(bytearray) = buffer.cast::<PyByteArray>() {
                     let current_len = bytearray.len();
                     let write_len = std::cmp::min(current_len, bytes_read);
                     
@@ -593,12 +593,12 @@ impl AsyncFile {
         
         if self.buffering == 0 {
             let bytes = if is_binary {
-                data.downcast::<PyBytes>()
+                data.cast::<PyBytes>()
                     .map_err(|_| value_err("expected bytes"))?
                     .as_bytes()
                     .to_vec()
             } else {
-                let s = data.downcast::<PyString>()
+                let s = data.cast::<PyString>()
                     .map_err(|_| value_err("expected str"))?
                     .str()?
                     .to_string();
@@ -618,20 +618,20 @@ impl AsyncFile {
                             Err(pyo3::exceptions::PyIOError::new_err("File not open for writing"))
                         }
                         FileState::Raw(f) => {
-                            f.write(&bytes_vec).map_err(|e| Python::with_gil(|py| io_err(py, e)))
+                            f.write(&bytes_vec).map_err(|e| Python::attach(|py| io_err(py, e)))
                         }
                     }
-                }).await.map_err(|e| Python::with_gil(|py| io_err(py, std::io::Error::new(std::io::ErrorKind::Other, e))))??;
+                }).await.map_err(|e| Python::attach(|py| io_err(py, std::io::Error::new(std::io::ErrorKind::Other, e))))??;
                 
-                Ok(Python::with_gil(|py| bytes_written.into_pyobject(py).unwrap().to_owned().unbind()))
+                Ok(Python::attach(|py| bytes_written.into_pyobject(py).unwrap().to_owned().unbind()))
             })
         } else {
             if is_binary {
-                let bytes_obj = data.downcast::<PyBytes>()
+                let bytes_obj = data.cast::<PyBytes>()
                     .map_err(|_| value_err("expected bytes"))?;
                 self.write_buffer.extend_from_slice(bytes_obj.as_bytes());
             } else {
-                let s_obj = data.downcast::<PyString>()
+                let s_obj = data.cast::<PyString>()
                     .map_err(|_| value_err("expected str"))?;
                 let s = s_obj.to_cow()?;
                 self.write_buffer.extend_from_slice(s.as_bytes());
@@ -650,14 +650,14 @@ impl AsyncFile {
                             return Err(pyo3::exceptions::PyIOError::new_err("File not open for writing"));
                         }
                         FileState::Raw(f) => {
-                            f.write_all(&buffer).map_err(|e| Python::with_gil(|py| io_err(py, e)))?;
+                            f.write_all(&buffer).map_err(|e| Python::attach(|py| io_err(py, e)))?;
                         }
                     }
-                    Ok(Python::with_gil(|py| bytes_len.into_pyobject(py).unwrap().to_owned().unbind()))
+                    Ok(Python::attach(|py| bytes_len.into_pyobject(py).unwrap().to_owned().unbind()))
                 })
             } else {
                 pyo3_async_runtimes::tokio::future_into_py(py, async move {
-                    Ok(Python::with_gil(|py| bytes_len.into_pyobject(py).unwrap().to_owned().unbind()))
+                    Ok(Python::attach(|py| bytes_len.into_pyobject(py).unwrap().to_owned().unbind()))
                 })
             }
         }
@@ -674,15 +674,15 @@ impl AsyncFile {
         
         let is_binary = self.is_binary;
         
-        let lines_list: Vec<Vec<u8>> = if let Ok(list) = lines.downcast::<pyo3::types::PyList>() {
+        let lines_list: Vec<Vec<u8>> = if let Ok(list) = lines.cast::<pyo3::types::PyList>() {
             list.iter()
                 .map(|item| {
                     if is_binary {
-                        item.downcast::<PyBytes>()
+                        item.cast::<PyBytes>()
                             .map(|b| b.as_bytes().to_vec())
                             .map_err(|_| value_err("expected bytes"))
                     } else {
-                        let py_str = item.downcast::<PyString>()
+                        let py_str = item.cast::<PyString>()
                             .map_err(|_| value_err("expected str"))?;
                         let s = py_str.to_cow().map_err(|_| value_err("invalid UTF-8"))?;
                         Ok(s.as_bytes().to_vec())
@@ -705,11 +705,11 @@ impl AsyncFile {
                         return Err(pyo3::exceptions::PyIOError::new_err("File not open for writing"));
                     }
                     FileState::Raw(f) => {
-                        f.write_all(line).map_err(|e| Python::with_gil(|py| io_err(py, e)))?;
+                        f.write_all(line).map_err(|e| Python::attach(|py| io_err(py, e)))?;
                     }
                 }
             }
-            Ok(Python::with_gil(|py| py.None()))
+            Ok(Python::attach(|py| py.None()))
         })
     }
     
@@ -738,10 +738,10 @@ impl AsyncFile {
                     _ => return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "invalid whence")),
                 };
                 state.seek_to(seek_from)
-            }).await.map_err(|e| Python::with_gil(|py| io_err(py, std::io::Error::new(std::io::ErrorKind::Other, e))))?
-              .map_err(|e| Python::with_gil(|py| io_err(py, e)))?;
+            }).await.map_err(|e| Python::attach(|py| io_err(py, std::io::Error::new(std::io::ErrorKind::Other, e))))?
+              .map_err(|e| Python::attach(|py| io_err(py, e)))?;
             
-            Ok(Python::with_gil(|py| pos.into_pyobject(py).unwrap().to_owned().unbind()))
+            Ok(Python::attach(|py| pos.into_pyobject(py).unwrap().to_owned().unbind()))
         })
     }
     
@@ -762,10 +762,10 @@ impl AsyncFile {
             let pos = tokio::task::spawn_blocking(move || {
                 let mut state = file_arc.blocking_lock();
                 state.position()
-            }).await.map_err(|e| Python::with_gil(|py| io_err(py, std::io::Error::new(std::io::ErrorKind::Other, e))))?
-              .map_err(|e| Python::with_gil(|py| io_err(py, e)))?;
+            }).await.map_err(|e| Python::attach(|py| io_err(py, std::io::Error::new(std::io::ErrorKind::Other, e))))?
+              .map_err(|e| Python::attach(|py| io_err(py, e)))?;
             
-            Ok(Python::with_gil(|py| pos.into_pyobject(py).unwrap().to_owned().unbind()))
+            Ok(Python::attach(|py| pos.into_pyobject(py).unwrap().to_owned().unbind()))
         })
     }
     
@@ -808,10 +808,10 @@ impl AsyncFile {
                     }
                 }
                 Ok(target_size)
-            }).await.map_err(|e| Python::with_gil(|py| io_err(py, std::io::Error::new(std::io::ErrorKind::Other, e))))?
-              .map_err(|e| Python::with_gil(|py| io_err(py, e)))?;
+            }).await.map_err(|e| Python::attach(|py| io_err(py, std::io::Error::new(std::io::ErrorKind::Other, e))))?
+              .map_err(|e| Python::attach(|py| io_err(py, e)))?;
             
-            Ok(Python::with_gil(|py| new_size.into_pyobject(py).unwrap().to_owned().unbind()))
+            Ok(Python::attach(|py| new_size.into_pyobject(py).unwrap().to_owned().unbind()))
         })
     }
     
@@ -935,10 +935,10 @@ impl AsyncFile {
                 };
                 
                 Ok::<Vec<u8>, std::io::Error>(buffer)
-            }).await.map_err(|e| Python::with_gil(|py| io_err(py, std::io::Error::new(std::io::ErrorKind::Other, e))))?
-              .map_err(|e| Python::with_gil(|py| io_err(py, e)))?;
+            }).await.map_err(|e| Python::attach(|py| io_err(py, std::io::Error::new(std::io::ErrorKind::Other, e))))?
+              .map_err(|e| Python::attach(|py| io_err(py, e)))?;
             
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 if is_binary {
                     Ok(PyBytes::new(py, &buffer).into_any().unbind())
                 } else {
@@ -995,11 +995,11 @@ impl AsyncFile {
                 }
                 
                 Ok::<Vec<u8>, std::io::Error>(line)
-            }).await.map_err(|e| Python::with_gil(|py| io_err(py, std::io::Error::new(std::io::ErrorKind::Other, e))))?;
+            }).await.map_err(|e| Python::attach(|py| io_err(py, std::io::Error::new(std::io::ErrorKind::Other, e))))?;
             
             match line {
                 Ok(line_bytes) => {
-                    Python::with_gil(|py| {
+                    Python::attach(|py| {
                         if is_binary {
                             Ok(PyBytes::new(py, &line_bytes).into_any().unbind())
                         } else {
@@ -1032,7 +1032,7 @@ pub fn open<'a>(
     let mode_str = mode.unwrap_or("r");
     let buffering_val = buffering.unwrap_or(-1);
     
-    let path_str = if let Ok(s) = file.downcast::<PyString>() {
+    let path_str = if let Ok(s) = file.cast::<PyString>() {
         s.str()?.to_string()
     } else {
         if let Ok(has_fspath) = file.hasattr("__fspath__") {
