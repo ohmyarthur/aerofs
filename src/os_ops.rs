@@ -12,7 +12,7 @@ pub fn stat<'a>(py: Python<'a>, path: Bound<'a, PyAny>) -> PyResult<Bound<'a, Py
             .map_err(|e| Python::with_gil(|py| os_err(py, e)))?;
         
         Python::with_gil(|py| {
-            let os_module = py.import_bound("os")?;
+            let os_module = py.import("os")?;
             let stat_result = os_module.getattr("stat_result")?;
             
             #[cfg(unix)]
@@ -125,7 +125,7 @@ pub fn readlink<'a>(py: Python<'a>, path: String) -> PyResult<Bound<'a, PyAny>> 
         let target = tokio::fs::read_link(&path).await
             .map_err(|e| Python::with_gil(|py| os_err(py, e)))?;
         Python::with_gil(|py| {
-            Ok(PyString::new_bound(py, &target.to_string_lossy()).into_any().unbind())
+            Ok(PyString::new(py, &target.to_string_lossy()).into_py(py))
         })
     })
 }
@@ -153,7 +153,7 @@ pub fn access<'a>(py: Python<'a>, path: Bound<'a, PyAny>, mode: i32) -> PyResult
         
         let metadata = match metadata {
             Ok(meta) => meta,
-            Err(_) => return Ok(Python::with_gil(|py| false.into_py(py))),
+            Err(_) => return Ok(Python::with_gil(|py| PyBool::new(py, false).into_py(py))),
         };
         
         #[cfg(unix)]
@@ -321,11 +321,11 @@ pub fn listdir<'a>(py: Python<'a>, path: Option<String>) -> PyResult<Bound<'a, P
         }
         
         Python::with_gil(|py| {
-            let list = PyList::empty_bound(py);
+            let list = PyList::empty(py);
             for name in names {
-                list.append(PyString::new_bound(py, &name))?;
+                list.append(PyString::new(py, &name))?;
             }
-            Ok(list.into_any().unbind())
+            Ok(list.into_py(py))
         })
     })
 }
@@ -336,7 +336,7 @@ pub fn getcwd<'a>(py: Python<'a>) -> PyResult<Bound<'a, PyAny>> {
         let cwd = std::env::current_dir()
             .map_err(|e| Python::with_gil(|py| os_err(py, e)))?;
         Python::with_gil(|py| {
-            Ok(PyString::new_bound(py, &cwd.to_string_lossy()).into_any().unbind())
+            Ok(PyString::new(py, &cwd.to_string_lossy()).into_py(py))
         })
     })
 }
@@ -388,8 +388,8 @@ mod path {
             let absolute = std::fs::canonicalize(&path)
                 .map_err(|e| Python::with_gil(|py| os_err(py, e)))?;
             Python::with_gil(|py| {
-            Ok(PyString::new_bound(py, &absolute.to_string_lossy()).into_any().unbind())
-        })
+                Ok(PyString::new(py, &absolute.to_string_lossy()).into_py(py))
+            })
         })
     }
     
@@ -449,7 +449,7 @@ mod path {
     pub fn ismount<'a>(py: Python<'a>, path: String) -> PyResult<Bound<'a, PyAny>> {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             Python::with_gil(|py| {
-                let os_path = py.import_bound("os.path")?;
+                let os_path = py.import("os.path")?;
                 let result = os_path.call_method1("ismount", (&path,))?;
                 Ok(result.unbind())
             })
@@ -460,7 +460,7 @@ mod path {
     pub fn samefile<'a>(py: Python<'a>, path1: String, path2: String) -> PyResult<Bound<'a, PyAny>> {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             Python::with_gil(|py| {
-                let os_path = py.import_bound("os.path")?;
+                let os_path = py.import("os.path")?;
                 let result = os_path.call_method1("samefile", (&path1, &path2))?;
                 Ok(result.unbind())
             })
@@ -471,7 +471,7 @@ mod path {
     pub fn sameopenfile<'a>(py: Python<'a>, fd1: i32, fd2: i32) -> PyResult<Bound<'a, PyAny>> {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             Python::with_gil(|py| {
-                let os_path = py.import_bound("os.path")?;
+                let os_path = py.import("os.path")?;
                 let result = os_path.call_method1("sameopenfile", (fd1, fd2))?;
                 Ok(result.unbind())
             })
@@ -484,7 +484,7 @@ mod path {
 pub fn statvfs<'a>(py: Python<'a>, path: String) -> PyResult<Bound<'a, PyAny>> {
     pyo3_async_runtimes::tokio::future_into_py(py, async move {
         Python::with_gil(|py| {
-            let os_module = py.import_bound("os")?;
+            let os_module = py.import("os")?;
             let result = os_module.call_method1("statvfs", (&path,))?;
             Ok(result.unbind())
         })
@@ -497,7 +497,7 @@ pub fn statvfs<'a>(py: Python<'a>, path: String) -> PyResult<Bound<'a, PyAny>> {
 pub fn sendfile<'a>(py: Python<'a>, out_fd: i32, in_fd: i32, offset: Option<i64>, count: i64) -> PyResult<Bound<'a, PyAny>> {
     pyo3_async_runtimes::tokio::future_into_py(py, async move {
         Python::with_gil(|py| {
-            let os_module = py.import_bound("os")?;
+            let os_module = py.import("os")?;
             let result = if let Some(off) = offset {
                 os_module.call_method1("sendfile", (out_fd, in_fd, off, count))?
             } else {
@@ -533,7 +533,7 @@ pub fn register_os_module(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<(
         m.add_function(wrap_pyfunction!(sendfile, m)?)?;
     }
     
-    let path_module = PyModule::new_bound(py, "path")?;
+    let path_module = PyModule::new(py, "path")?;
     path_module.add_function(wrap_pyfunction!(path::exists, m)?)?;
     path_module.add_function(wrap_pyfunction!(path::isfile, m)?)?;
     path_module.add_function(wrap_pyfunction!(path::isdir, m)?)?;

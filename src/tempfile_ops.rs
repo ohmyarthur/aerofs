@@ -1,5 +1,5 @@
 use pyo3::prelude::*;
-use pyo3::types::PyString;
+use pyo3::types::{PyBool, PyString, PyDict};
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncWriteExt, AsyncSeekExt};
 use std::path::PathBuf;
@@ -80,7 +80,7 @@ impl AsyncTemporaryFile {
             
             tokio::fs::remove_file(&path).await.ok();
             
-            Ok(Python::with_gil(|py| false.into_py(py)))
+            Ok(Python::with_gil(|py| PyBool::new(py, false).into_any().unbind()))
         })
     }
     
@@ -147,10 +147,10 @@ impl AsyncTemporaryFile {
             
             Python::with_gil(|py| {
                 if is_binary {
-                    Ok(pyo3::types::PyBytes::new_bound(py, &data).into_any().unbind())
+                    Ok(pyo3::types::PyBytes::new(py, &data).into_any().unbind())
                 } else {
                     let s = String::from_utf8_lossy(&data);
-                    Ok(PyString::new_bound(py, &s).into_any().unbind())
+                    Ok(PyString::new(py, &s).into_any().unbind())
                 }
             })
         })
@@ -309,9 +309,9 @@ impl AsyncTemporaryFile {
             let result = if is_binary {
                 use tokio::io::{AsyncBufReadExt, BufReader};
                 let mut buf_reader = BufReader::new(&mut *f);
-                let mut line_buf = Vec::new();
+                let mut line_bytes = Vec::new();
                 
-                match buf_reader.read_until(b'\n', &mut line_buf).await {
+                match buf_reader.read_until(b'\n', &mut line_bytes).await {
                     Ok(0) => {
                         return Python::with_gil(|_py| {
                             Err(pyo3::exceptions::PyStopAsyncIteration::new_err(""))
@@ -319,7 +319,7 @@ impl AsyncTemporaryFile {
                     }
                     Ok(_) => {
                         Python::with_gil(|py| {
-                            Ok(pyo3::types::PyBytes::new_bound(py, &line_buf).into_any().unbind())
+                            Ok(pyo3::types::PyBytes::new(py, &line_bytes).into_any().unbind())
                         })
                     }
                     Err(e) => {
@@ -341,7 +341,7 @@ impl AsyncTemporaryFile {
                     }
                     Ok(_) => {
                         Python::with_gil(|py| {
-                            Ok(PyString::new_bound(py, &line_str).into_any().unbind())
+                            Ok(PyString::new(py, &line_str).into_any().unbind())
                         })
                     }
                     Err(e) => {
@@ -389,7 +389,7 @@ impl AsyncTemporaryDirectory {
                 obj.path = Some(path);
                 
                 if let Some(p) = &obj.path {
-                    Ok(PyString::new_bound(py, &p.to_string_lossy()).into_any().unbind())
+                    Ok(PyString::new(py, &p.to_string_lossy()).into_any().unbind())
                 } else {
                     Ok(<() as pyo3::IntoPy<Py<PyAny>>>::into_py((), py))
                 }
@@ -410,7 +410,7 @@ impl AsyncTemporaryDirectory {
             if let Some(p) = path {
                 tokio::fs::remove_dir_all(&p).await.ok();
             }
-            Ok(Python::with_gil(|py| false.into_py(py)))
+            Ok(Python::with_gil(|py| PyBool::new(py, false).into_any().unbind()))
         })
     }
     
@@ -512,13 +512,12 @@ pub fn spooled_temporary_file<'a>(
     prefix: Option<String>,
     dir: Option<String>,
 ) -> PyResult<PyObject> {
-    let tempfile_module = py.import_bound("tempfile")
+    let tempfile_module = py.import("tempfile")
         .map_err(|e| PyErr::from(e))?;
-    
     let spooled_class = tempfile_module.getattr("SpooledTemporaryFile")
         .map_err(|e| PyErr::from(e))?;
     
-    let kwargs = pyo3::types::PyDict::new_bound(py);
+    let kwargs = PyDict::new(py);
     kwargs.set_item("max_size", max_size.unwrap_or(0))?;
     kwargs.set_item("mode", mode.unwrap_or("w+b"))?;
     kwargs.set_item("buffering", buffering.unwrap_or(-1))?;
@@ -540,7 +539,7 @@ pub fn spooled_temporary_file<'a>(
     
     let python_spooled = spooled_class.call((), Some(&kwargs))?;
     
-    let wrap_module = py.import_bound("aerofs.threadpool")
+    let wrap_module = py.import("aerofs.threadpool")
         .map_err(|e| PyErr::from(e))?;
     let wrap_func = wrap_module.getattr("wrap")
         .map_err(|e| PyErr::from(e))?;

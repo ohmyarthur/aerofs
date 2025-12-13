@@ -1,5 +1,5 @@
 use pyo3::prelude::*;
-use pyo3::types::{PyBytes, PyString, PyList, PyByteArray, PyBytesMethods};
+use pyo3::types::{PyBytes, PyString, PyList, PyByteArray, PyBytesMethods, PyBool};
 use pyo3::ffi;
 use std::fs::File;
 use std::io::{Read, Write, Seek, SeekFrom, BufReader, BufRead};
@@ -209,7 +209,7 @@ impl AsyncFile {
                     Ok::<(), PyErr>(())
                 }).await.map_err(|e| Python::with_gil(|py| io_err(py, std::io::Error::new(std::io::ErrorKind::Other, e))))??;
             }
-            Ok(Python::with_gil(|py| false.into_py(py)))
+            Ok(Python::with_gil(|py| PyBool::new(py, false).into_any().unbind()))
         })
     }
     
@@ -319,11 +319,11 @@ impl AsyncFile {
                             let data_slice = &full_slice[0..bytes_read];
                             
                             if is_binary {
-                                Ok(PyBytes::new_bound(py, data_slice).into_any().unbind())
+                                Ok(PyBytes::new(py, data_slice).into_any().unbind())
                             } else {
                                 let s = std::str::from_utf8(data_slice)
                                     .map_err(|e| pyo3::exceptions::PyUnicodeDecodeError::new_err(e.to_string()))?;
-                                Ok(PyString::new_bound(py, s).into_any().unbind())
+                                Ok(PyString::new(py, s).into_any().unbind())
                             }
                         });
                     } else {
@@ -334,7 +334,7 @@ impl AsyncFile {
                                 let bytes_ref = bytes_obj.bind(py);
                                 let s = std::str::from_utf8(PyBytesMethods::as_bytes(bytes_ref))
                                     .map_err(|e| pyo3::exceptions::PyUnicodeDecodeError::new_err(e.to_string()))?;
-                                Ok(PyString::new_bound(py, s).into_any().unbind())
+                                Ok(PyString::new(py, s).into_any().unbind())
                             }
                         });
                     }
@@ -351,10 +351,10 @@ impl AsyncFile {
             
             Python::with_gil(|py| {
                 if is_binary {
-                    Ok(PyBytes::new_bound(py, &buffer).into_any().unbind())
+                    Ok(PyBytes::new(py, &buffer).into_any().unbind())
                 } else {
                     let s = String::from_utf8_lossy(&buffer);
-                    Ok(PyString::new_bound(py, &s).into_any().unbind())
+                    Ok(PyString::new(py, &s).into_any().unbind())
                 }
             })
         })
@@ -388,10 +388,10 @@ impl AsyncFile {
             
             Python::with_gil(|py| {
                 if is_binary {
-                    Ok(PyBytes::new_bound(py, &buffer).into_any().unbind())
+                    Ok(PyBytes::new(py, &buffer).into_any().unbind())
                 } else {
                     let s = String::from_utf8_lossy(&buffer);
-                    Ok(PyString::new_bound(py, &s).into_any().unbind())
+                    Ok(PyString::new(py, &s).into_any().unbind())
                 }
             })
         })
@@ -447,10 +447,10 @@ impl AsyncFile {
             
             Python::with_gil(|py| {
             if is_binary {
-                    Ok(PyBytes::new_bound(py, &line).into_any().unbind())
+                    Ok(PyBytes::new(py, &line).into_any().unbind())
                 } else {
                     let s = String::from_utf8_lossy(&line);
-                    Ok(PyString::new_bound(py, &s).into_any().unbind())
+                    Ok(PyString::new(py, &s).into_any().unbind())
                 }
             })
         })
@@ -514,16 +514,16 @@ impl AsyncFile {
               .map_err(|e| Python::with_gil(|py| io_err(py, e)))?;
             
             Python::with_gil(|py| {
-                let list = PyList::empty_bound(py);
+                let list = PyList::empty(py);
                 for line in lines {
                     if is_binary {
-                        list.append(PyBytes::new_bound(py, &line))?;
+                        list.append(PyBytes::new(py, &line))?;
                     } else {
                         let s = String::from_utf8_lossy(&line);
-                        list.append(PyString::new_bound(py, &s))?;
+                        list.append(PyString::new(py, &s))?;
                     }
                 }
-                Ok(list.into_any().unbind())
+                Ok(list.into_py(py))
             })
         })
     }
@@ -871,7 +871,7 @@ impl AsyncFile {
         self.closed = true;
         self.detached = true;
         
-        let builtins = py.import_bound("builtins")?;
+        let builtins = py.import("builtins")?;
         let file = builtins.call_method1("open", (path, mode))?;
         Ok(file)
     }
@@ -939,10 +939,10 @@ impl AsyncFile {
             
             Python::with_gil(|py| {
                 if is_binary {
-                    Ok(PyBytes::new_bound(py, &buffer).into_any().unbind())
+                    Ok(PyBytes::new(py, &buffer).into_any().unbind())
                 } else {
                     let s = String::from_utf8_lossy(&buffer);
-                    Ok(PyString::new_bound(py, &s).into_any().unbind())
+                    Ok(PyString::new(py, &s).into_any().unbind())
                 }
             })
         })
@@ -1000,10 +1000,10 @@ impl AsyncFile {
                 Ok(line_bytes) => {
                     Python::with_gil(|py| {
                         if is_binary {
-                            Ok(PyBytes::new_bound(py, &line_bytes).into_any().unbind())
+                            Ok(PyBytes::new(py, &line_bytes).into_any().unbind())
                         } else {
                             let s = String::from_utf8_lossy(&line_bytes);
-                            Ok(PyString::new_bound(py, &s).into_any().unbind())
+                            Ok(PyString::new(py, &s).into_any().unbind())
                         }
                     })
                 },

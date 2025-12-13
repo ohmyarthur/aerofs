@@ -142,6 +142,56 @@ jobs:
           tag_name: v${{ needs.create-release.outputs.version }}
           files: dist/*.whl
 
+  build-wheels-macos:
+    name: Build wheels (macOS universal2)
+    needs: create-release
+    runs-on: macos-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: v${{ needs.create-release.outputs.version }}
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+      
+      - name: Install uv
+        run: pip install uv
+      
+      - name: Install maturin
+        run: uv pip install --system maturin
+      
+      - name: Build universal2 wheels
+        run: maturin build --release --strip --out dist --universal2
+      
+      - name: List built files
+        run: ls -lah dist/
+      
+      - name: Upload wheels artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels-macos
+          path: dist/
+          if-no-files-found: error
+      
+      - name: Upload wheels to release
+        uses: softprops/action-gh-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: v${{ needs.create-release.outputs.version }}
+          files: dist/*.whl
+
   build-sdist:
     name: Build source distribution
     needs: create-release

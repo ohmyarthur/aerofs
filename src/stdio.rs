@@ -29,10 +29,10 @@ impl AsyncStdin {
             
             Python::with_gil(|py| {
                 if is_bytes {
-                    Ok(PyBytes::new_bound(py, &buffer).into_any().unbind())
+                    Ok(PyBytes::new(py, &buffer).into_any().unbind())
                 } else {
                     let s = String::from_utf8_lossy(&buffer);
-                    Ok(PyString::new_bound(py, &s).into_any().unbind())
+                    Ok(PyString::new(py, &s).into_any().unbind())
                 }
             })
         })
@@ -52,7 +52,7 @@ impl AsyncStdout {
         
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             Python::with_gil(|py| {
-                let sys = py.import_bound("sys")?;
+                let sys = py.import("sys")?;
                 let stdout = if is_bytes {
                     sys.getattr("stdout")?.getattr("buffer")?
                 } else {
@@ -88,7 +88,7 @@ impl AsyncStderr {
         
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             Python::with_gil(|py| {
-                let sys = py.import_bound("sys")?;
+                let sys = py.import("sys")?;
                 let stderr = if is_bytes {
                     sys.getattr("stderr")?.getattr("buffer")?
                 } else {

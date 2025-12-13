@@ -41,7 +41,7 @@ To install aerofs, simply:
 uv pip install aerofs
 ```
 
-> **Note:** Currently supports **Linux only**. macOS and Windows support is planned.
+> **Note:** Official wheels available for **Linux** and **macOS (Intel & Apple Silicon / universal2)**. Windows not yet supported.
 
 ## Usage
 
@@ -166,7 +166,7 @@ Available interfaces:
 ## Requirements
 
 - Python 3.9 or higher
-- **Linux only** (macOS and Windows support coming soon - [see issue](https://github.com/ohmyarthur/aerofs/issues))
+- Linux or macOS (Intel/Apple Silicon). Windows not yet supported.
 
 ## Contributing
 
