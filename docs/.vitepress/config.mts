@@ -9,7 +9,7 @@ export default defineConfig({
     lastUpdated: true,
 
     head: [
-        ['link', { rel: 'icon', href: '/favicon.ico' }],
+        ['link', { rel: 'icon', href: '/aerofs/favicon.ico' }],
         ['link', { rel: 'stylesheet', href: 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap' }],
         ['link', { rel: 'stylesheet', href: 'https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap' }]
     ],
@@ -17,7 +17,7 @@ export default defineConfig({
     themeConfig: {
         logo: { text: 'aerofs' },
 
-        siteTitle: 'aerofs',
+        siteTitle: 'AeroFS',
 
         nav: [
             { text: 'Home', link: '/' },
