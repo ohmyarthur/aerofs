@@ -15,7 +15,7 @@
 
 **aerofs** brings the power of Rust's asynchronous I/O to Python. By leveraging `tokio` and `PyO3`, it provides a non-blocking, thread-safe, and highly performant filesystem interface for `asyncio` applications.
 
-> **Read the full documentation at the [Documentation Site](https://ohmyarthur.github.io/aerofs/).**
+> **Full documentation at the [Documentation Site](https://ohmyarthur.github.io/aerofs/).**
 
 ## Installation
 
@@ -41,7 +41,7 @@ if __name__ == "__main__":
 
 ## Documentation
 
-Comprehensive guides and API references are available in the `docs/` directory or online:
+Guides and API references are available in the `docs/` directory or online:
 
 - [Getting Started](https://ohmyarthur.github.io/aerofs/guide/getting-started.html)
 - [File Operations](https://ohmyarthur.github.io/aerofs/guide/file-operations.html)
