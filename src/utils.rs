@@ -1,5 +1,5 @@
+use pyo3::exceptions::{PyIOError, PyOSError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::exceptions::{PyIOError, PyValueError, PyOSError};
 use pyo3::types::PyString;
 use std::io;
 
@@ -22,29 +22,25 @@ pub fn io_err_ctx(_py: Python<'_>, err: io::Error, context: &str) -> PyErr {
 }
 
 pub fn get_temp_dir() -> String {
-    std::env::temp_dir()
-        .to_string_lossy()
-        .to_string()
+    std::env::temp_dir().to_string_lossy().to_string()
 }
 
 pub fn path_to_string(path: &Bound<'_, PyAny>) -> PyResult<String> {
     if let Ok(s) = path.cast::<PyString>() {
         Ok(s.str()?.to_string())
-    } else {
-        if let Ok(has_fspath) = path.hasattr("__fspath__") {
-            if has_fspath {
-                let fspath_result = path.call_method0("__fspath__")?;
-                if let Ok(path_str) = fspath_result.extract::<String>() {
-                    Ok(path_str)
-                } else {
-                    Err(value_err("path must be a string path or PathLike object"))
-                }
+    } else if let Ok(has_fspath) = path.hasattr("__fspath__") {
+        if has_fspath {
+            let fspath_result = path.call_method0("__fspath__")?;
+            if let Ok(path_str) = fspath_result.extract::<String>() {
+                Ok(path_str)
             } else {
                 Err(value_err("path must be a string path or PathLike object"))
             }
         } else {
             Err(value_err("path must be a string path or PathLike object"))
         }
+    } else {
+        Err(value_err("path must be a string path or PathLike object"))
     }
 }
 
