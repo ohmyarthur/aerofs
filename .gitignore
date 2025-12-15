@@ -49,3 +49,7 @@ Thumbs.db
 *.bak
 verify_full_api.py
 real_operations.py
+
+#Other
+node_modules/
+docs/.vitepress/cache/deps

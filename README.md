@@ -1,212 +1,59 @@
-# aerofs: High-Performance Asynchronous File I/O for Python
+# aerofs
 
-[![PyPI](https://img.shields.io/pypi/v/aerofs.svg)](https://pypi.org/project/aerofs/)
-[![Release](https://github.com/ohmyarthur/aerofs/workflows/Release/badge.svg)](https://github.com/ohmyarthur/aerofs/actions)
-[![Python Versions](https://img.shields.io/pypi/pyversions/aerofs.svg)](https://pypi.org/project/aerofs/)
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+<div align="center">
+  <p><strong>High-Performance Asynchronous File I/O for Python</strong></p>
+  <p>Powered by Rust, Tokio, and PyO3.</p>
 
-**aerofs** is an Apache 2.0 licensed library for handling local disk files in asyncio applications, written in Rust and powered by PyO3 and Tokio for maximum performance.
+  <p>
+    <a href="https://pypi.org/project/aerofs/"><img src="https://img.shields.io/pypi/v/aerofs.svg" alt="PyPI"></a>
+    <a href="https://github.com/ohmyarthur/aerofs/actions"><img src="https://github.com/ohmyarthur/aerofs/workflows/Release/badge.svg" alt="Release"></a>
+    <a href="https://opensource.org/licenses/Apache-2.0"><img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg" alt="License"></a>
+  </p>
+</div>
 
-Ordinary local file I/O is blocking and cannot easily be made asynchronous. This means doing file I/O may interfere with asyncio applications, which shouldn't block the executing thread. **aerofs** solves this by providing asynchronous file operations with superior performance compared to pure Python alternatives like aiofiles.
+---
 
-```python
-import aerofs
+**aerofs** brings the power of Rust's asynchronous I/O to Python. By leveraging `tokio` and `PyO3`, it provides a non-blocking, thread-safe, and highly performant filesystem interface for `asyncio` applications.
 
-async with aerofs.open('filename', mode='r') as f:
-    contents = await f.read()
-print(contents)
-```
+> **Read the full documentation at the [Documentation Site](https://ohmyarthur.github.io/aerofs/).**
 
-Asynchronous iteration is also supported:
+## Features
 
-```python
-async with aerofs.open('filename') as f:
-    async for line in f:
-        print(line)
-```
-
-Asynchronous interface to tempfile module:
-
-```python
-async with aerofs.tempfile.TemporaryFile('wb') as f:
-    await f.write(b'Hello, World!')
-```
-
+- 🚀 **High Performance**: Built on Rust's `tokio` runtime for minimal overhead.
+- 🧵 **Thread-Safe**: Safe concurrent file operations.
+- 📦 **Drop-in Support**: Mirrors Python's standard `open()`, `os`, and `tempfile` APIs.
+- 🐧 **Cross-Platform**: Optimized for Linux and macOS (Apple Silicon & Intel).
 
 ## Installation
 
-To install aerofs, simply:
-
 ```shell
-uv pip install aerofs
+pip install aerofs
 ```
 
-> **Note:** Official wheels available for **Linux** and **macOS (Intel & Apple Silicon / universal2)**. Windows not yet supported.
-
-## Usage
-
-### Basic File Operations
-
-Files are opened using the `aerofs.open()` coroutine, which mirrors Python's builtin `open()`:
-
+## Quick Start
 ```python
 import aerofs
+import asyncio
 
-async def read_file():
-    async with aerofs.open('example.txt', 'r') as f:
-        content = await f.read()
-        return content
+async def main():
+    async with aerofs.open('hello.txt', 'w') as f:
+        await f.write('Hello via Rust!')
 
-async def write_file():
-    async with aerofs.open('example.txt', 'w') as f:
-        await f.write('Hello, World!')
+    async with aerofs.open('hello.txt', 'r') as f:
+        print(await f.read())
+
+if __name__ == "__main__":
+    asyncio.run(main())
 ```
 
-The following methods are async and available on file objects:
+## Documentation
 
-- `close`
-- `flush`
-- `isatty`
-- `read`
-- `readall`
-- `read1`
-- `readinto`
-- `readline`
-- `readlines`
-- `seek`
-- `seekable`
-- `tell`
-- `truncate`
-- `writable`
-- `write`
-- `writelines`
+Comprehensive guides and API references are available in the `docs/` directory or online:
 
-### Standard I/O
-
-Async access to standard streams:
-
-```python
-import aerofs
-
-async def read_stdin():
-    async for line in aerofs.stdin:
-        print(f"You typed: {line}")
-
-async def write_stdout():
-    await aerofs.stdout.write("Hello from async stdout!\n")
-    await aerofs.stdout.flush()
-```
-
-Available streams:
-- `aerofs.stdin`, `aerofs.stdout`, `aerofs.stderr`
-- `aerofs.stdin_bytes`, `aerofs.stdout_bytes`, `aerofs.stderr_bytes`
-
-### OS Operations
-
-The `aerofs.os` module contains async versions of useful `os` functions:
-
-```python
-import aerofs.os
-
-async def os_operations():
-    # Check if file exists
-    exists = await aerofs.os.path.exists('myfile.txt')
-    
-    # List directory
-    files = await aerofs.os.listdir('.')
-    
-    # Get file stats
-    stats = await aerofs.os.stat('myfile.txt')
-    
-    # File operations
-    await aerofs.os.rename('old.txt', 'new.txt')
-    await aerofs.os.remove('unwanted.txt')
-    await aerofs.os.mkdir('newdir')
-```
-
-Available operations:
-- `stat`, `statvfs`, `sendfile`
-- `rename`, `renames`, `replace`, `remove`, `unlink`
-- `mkdir`, `makedirs`, `rmdir`, `removedirs`
-- `link`, `symlink`, `readlink`
-- `listdir`, `scandir`, `access`, `getcwd`
-- `path.abspath`, `path.exists`, `path.isfile`, `path.isdir`
-- `path.islink`, `path.ismount`, `path.getsize`
-- `path.getatime`, `path.getctime`, `path.samefile`, `path.sameopenfile`
-
-### Tempfile
-
-**aerofs.tempfile** implements async interfaces for temporary files:
-
-```python
-import aerofs.tempfile
-import os
-
-async def use_tempfile():
-    # Named temporary file
-    async with aerofs.tempfile.NamedTemporaryFile('wb+') as f:
-        await f.write(b'Line1\nLine2')
-        await f.seek(0)
-        async for line in f:
-            print(line)
-    
-    # Temporary directory
-    async with aerofs.tempfile.TemporaryDirectory() as d:
-        filename = os.path.join(d, "file.ext")
-        async with aerofs.open(filename, 'w') as f:
-            await f.write("temporary data")
-```
-
-Available interfaces:
-- `TemporaryFile`
-- `NamedTemporaryFile`
-- `SpooledTemporaryFile`
-- `TemporaryDirectory`
-
-## Requirements
-
-- Python 3.9 or higher
-- Linux or macOS (Intel/Apple Silicon). Windows not yet supported.
-
-## Contributing
-
-Contributions are very welcome! Please feel free to submit a Pull Request.
-
-### Development Setup
-
-1. Clone the repository:
-```shell
-git clone https://github.com/ohmyarthur/aerofs.git
-cd aerofs
-```
-
-2. Install development dependencies:
-```shell
-uv pip install -e ".[dev]"
-```
-
-3. Run tests:
-```shell
-pytest
-```
-
-### Building from Source
-
-```shell
-# Install maturin
-uv pip install maturin
-
-# Build the package
-maturin develop
-
-# Or build a wheel
-maturin build --release
-```
+- [Getting Started](https://ohmyarthur.github.io/aerofs/guide/getting-started.html)
+- [File Operations](https://ohmyarthur.github.io/aerofs/guide/file-operations.html)
+- [Benchmarks](https://ohmyarthur.github.io/aerofs/guide/benchmarks.html)
 
 ## License
 
-This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
-
-## Acknowledgments
-
-Inspired by [aiofiles](https://github.com/Tinche/aiofiles), but built from the ground up with Rust .
+Apache 2.0 License.
