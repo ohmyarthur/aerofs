@@ -4,6 +4,7 @@ export default defineConfig({
     title: "aerofs",
     description: "High-Performance Asynchronous File I/O for Python",
     lang: 'en-US',
+    base: '/aerofs/',
     cleanUrls: true,
     lastUpdated: true,
 
