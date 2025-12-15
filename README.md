@@ -17,13 +17,6 @@
 
 > **Read the full documentation at the [Documentation Site](https://ohmyarthur.github.io/aerofs/).**
 
-## Features
-
-- 🚀 **High Performance**: Built on Rust's `tokio` runtime for minimal overhead.
-- 🧵 **Thread-Safe**: Safe concurrent file operations.
-- 📦 **Drop-in Support**: Mirrors Python's standard `open()`, `os`, and `tempfile` APIs.
-- 🐧 **Cross-Platform**: Optimized for Linux and macOS (Apple Silicon & Intel).
-
 ## Installation
 
 ```shell
@@ -52,7 +45,6 @@ Comprehensive guides and API references are available in the `docs/` directory o
 
 - [Getting Started](https://ohmyarthur.github.io/aerofs/guide/getting-started.html)
 - [File Operations](https://ohmyarthur.github.io/aerofs/guide/file-operations.html)
-- [Benchmarks](https://ohmyarthur.github.io/aerofs/guide/benchmarks.html)
 
 ## License
 
