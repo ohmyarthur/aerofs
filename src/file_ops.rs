@@ -825,7 +825,15 @@ impl AsyncFile {
             let pos = tokio::task::spawn_blocking(move || {
                 let mut state = file_arc.blocking_lock();
                 let seek_from = match whence {
-                    0 => SeekFrom::Start(offset as u64),
+                    0 => {
+                        if offset < 0 {
+                            return Err(std::io::Error::new(
+                                std::io::ErrorKind::InvalidInput,
+                                "negative offset with SEEK_SET is not allowed",
+                            ));
+                        }
+                        SeekFrom::Start(offset as u64)
+                    }
                     1 => SeekFrom::Current(offset),
                     2 => SeekFrom::End(offset),
                     _ => {
@@ -997,8 +1005,10 @@ impl AsyncFile {
         }
 
         if let Some(file_arc) = &self.file {
-            let state = file_arc.blocking_lock();
-            Ok(state.raw_fd())
+            match file_arc.try_lock() {
+                Ok(state) => Ok(state.raw_fd()),
+                Err(_) => Err(value_err("file is currently locked by another operation")),
+            }
         } else {
             Err(value_err("File not open"))
         }
@@ -1028,7 +1038,10 @@ impl AsyncFile {
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let file_arc_clone = file_arc.clone();
-            let size = size.unwrap_or(1) as usize; // Convert Option<i64> to usize, default to 1
+            let size = match size.unwrap_or(1) {
+                n if n <= 0 => 1usize,
+                n => n as usize,
+            };
 
             let buffer = tokio::task::spawn_blocking(move || {
                 let mut state = file_arc_clone.blocking_lock();
