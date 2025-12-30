@@ -78,7 +78,7 @@ asyncio.run(process_logs())
 <div class="stats-section fa-fade-in" style="animation-delay: 0.5s; margin-top: 4rem;">
 <div class="stats-grid">
 <div class="stat-item">
-<span class="stat-number">v4.0.6</span>
+<span class="stat-number">v4.0.7</span>
 <span class="stat-label">Latest Version</span>
 </div>
 <div class="stat-item">

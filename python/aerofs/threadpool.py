@@ -38,7 +38,7 @@ class AsyncWrapper:
     
     def _get_loop(self):
         if self._loop is None:
-            self._loop = asyncio.get_event_loop()
+            self._loop = asyncio.get_running_loop()
         return self._loop
     
     async def read(self, *args, **kwargs):

@@ -3,6 +3,7 @@ use pyo3::conversion::IntoPyObject;
 use pyo3::ffi;
 use pyo3::prelude::*;
 use pyo3::types::{PyByteArray, PyBytes, PyBytesMethods, PyList, PyString};
+use std::cell::RefCell;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom, Write};
 use std::os::unix::io::AsRawFd;
@@ -11,6 +12,46 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 const BUFFER_SIZE: usize = 131072;
+const BUFFER_POOL_MAX: usize = 8;
+
+thread_local! {
+    static BUFFER_POOL: RefCell<Vec<Vec<u8>>> = const { RefCell::new(Vec::new()) };
+}
+
+fn acquire_buffer(capacity: usize) -> Vec<u8> {
+    BUFFER_POOL.with(|pool| {
+        pool.borrow_mut()
+            .pop()
+            .map(|mut buf| {
+                buf.clear();
+                if buf.capacity() < capacity {
+                    buf.reserve(capacity - buf.capacity());
+                }
+                buf
+            })
+            .unwrap_or_else(|| Vec::with_capacity(capacity))
+    })
+}
+
+fn release_buffer(buf: Vec<u8>) {
+    BUFFER_POOL.with(|pool| {
+        let mut p = pool.borrow_mut();
+        if p.len() < BUFFER_POOL_MAX {
+            p.push(buf);
+        }
+    });
+}
+
+/// UTF-8 string conversion with fast-path for valid UTF-8
+fn bytes_to_pystring(py: Python<'_>, bytes: &[u8]) -> Py<PyAny> {
+    match std::str::from_utf8(bytes) {
+        Ok(s) => PyString::new(py, s).into_any().unbind(),
+        Err(_) => {
+            let s = String::from_utf8_lossy(bytes);
+            PyString::new(py, &s).into_any().unbind()
+        }
+    }
+}
 
 enum FileState {
     BufferedRead(BufReader<File>),
@@ -373,7 +414,7 @@ impl AsyncFile {
 
             let buffer = tokio::task::spawn_blocking(move || {
                 let mut state = file_arc.blocking_lock();
-                let mut buffer = Vec::with_capacity(BUFFER_SIZE);
+                let mut buffer = acquire_buffer(BUFFER_SIZE);
                 state.read_all(&mut buffer)?;
                 Ok::<Vec<u8>, std::io::Error>(buffer)
             })
@@ -381,14 +422,15 @@ impl AsyncFile {
             .map_err(|e| Python::attach(|py| io_err(py, std::io::Error::other(e))))?
             .map_err(|e| Python::attach(|py| io_err(py, e)))?;
 
-            Python::attach(|py| {
+            let result = Python::attach(|py| {
                 if is_binary {
                     Ok(PyBytes::new(py, &buffer).into_any().unbind())
                 } else {
-                    let s = String::from_utf8_lossy(&buffer);
-                    Ok(PyString::new(py, &s).into_any().unbind())
+                    Ok(bytes_to_pystring(py, &buffer))
                 }
-            })
+            });
+            release_buffer(buffer);
+            result
         })
     }
 
@@ -426,8 +468,7 @@ impl AsyncFile {
                 if is_binary {
                     Ok(PyBytes::new(py, &buffer).into_any().unbind())
                 } else {
-                    let s = String::from_utf8_lossy(&buffer);
-                    Ok(PyString::new(py, &s).into_any().unbind())
+                    Ok(bytes_to_pystring(py, &buffer))
                 }
             })
         })
@@ -489,8 +530,7 @@ impl AsyncFile {
                 if is_binary {
                     Ok(PyBytes::new(py, &line).into_any().unbind())
                 } else {
-                    let s = String::from_utf8_lossy(&line);
-                    Ok(PyString::new(py, &s).into_any().unbind())
+                    Ok(bytes_to_pystring(py, &line))
                 }
             })
         })
@@ -562,16 +602,17 @@ impl AsyncFile {
             .map_err(|e| Python::attach(|py| io_err(py, e)))?;
 
             Python::attach(|py| {
-                let list = PyList::empty(py);
-                for line in lines {
-                    if is_binary {
-                        list.append(PyBytes::new(py, &line))?;
-                    } else {
-                        let s = String::from_utf8_lossy(&line);
-                        list.append(PyString::new(py, &s))?;
-                    }
-                }
-                Ok(list.unbind())
+                let items: Vec<Py<PyAny>> = lines
+                    .iter()
+                    .map(|line| {
+                        if is_binary {
+                            PyBytes::new(py, line).into_any().unbind()
+                        } else {
+                            bytes_to_pystring(py, line)
+                        }
+                    })
+                    .collect();
+                Ok(PyList::new(py, &items)?.unbind())
             })
         })
     }
@@ -1144,8 +1185,7 @@ impl AsyncFile {
                     if is_binary {
                         Ok(PyBytes::new(py, &line_bytes).into_any().unbind())
                     } else {
-                        let s = String::from_utf8_lossy(&line_bytes);
-                        Ok(PyString::new(py, &s).into_any().unbind())
+                        Ok(bytes_to_pystring(py, &line_bytes))
                     }
                 }),
                 Err(_) => Err(pyo3::exceptions::PyStopAsyncIteration::new_err(

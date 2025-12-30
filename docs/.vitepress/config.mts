@@ -48,6 +48,13 @@ export default defineConfig({
                     { text: 'OS (aerofs.os)', link: '/api/os' },
                     { text: 'Tempfile', link: '/api/tempfile' }
                 ]
+            },
+            {
+                text: 'Resources',
+                items: [
+                    { text: 'Performance Tips', link: '/guide/performance' },
+                    { text: 'FAQ', link: '/guide/faq' }
+                ]
             }
         ],
 

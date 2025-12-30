@@ -2,8 +2,17 @@ use crate::utils::{os_err, path_to_string, value_err};
 use pyo3::conversion::IntoPyObject;
 use pyo3::prelude::*;
 use pyo3::types::{PyList, PyString};
+use std::ffi::OsStr;
 use std::path::PathBuf;
 use tokio::fs;
+
+/// UTF-8 fast-path for OsStr conversion
+fn osstr_to_string(s: &OsStr) -> String {
+    match s.to_str() {
+        Some(valid) => valid.to_string(),
+        None => s.to_string_lossy().into_owned(),
+    }
+}
 
 #[pyfunction]
 pub fn stat<'a>(py: Python<'a>, path: Bound<'a, PyAny>) -> PyResult<Bound<'a, PyAny>> {
@@ -267,7 +276,7 @@ pub fn scandir<'a>(py: Python<'a>, path: Option<String>) -> PyResult<Bound<'a, P
                 .map_err(|e| Python::attach(|py| os_err(py, e)))?;
 
             let dir_entry = AsyncDirEntry {
-                name: entry.file_name().to_string_lossy().to_string(),
+                name: osstr_to_string(&entry.file_name()),
                 path: entry.path(),
                 is_dir: metadata.is_dir(),
                 is_file: metadata.is_file(),
@@ -276,11 +285,11 @@ pub fn scandir<'a>(py: Python<'a>, path: Option<String>) -> PyResult<Bound<'a, P
         }
 
         Python::attach(|py| {
-            let list = PyList::empty(py);
-            for entry in entries_list {
-                list.append(Py::new(py, entry)?)?;
-            }
-            Ok(list.unbind())
+            let items: Vec<Py<PyAny>> = entries_list
+                .into_iter()
+                .filter_map(|e| Py::new(py, e).ok().map(|p| p.into_any()))
+                .collect();
+            Ok(PyList::new(py, &items)?.unbind())
         })
     })
 }
@@ -363,15 +372,15 @@ pub fn listdir<'a>(py: Python<'a>, path: Option<String>) -> PyResult<Bound<'a, P
             .await
             .map_err(|e| Python::attach(|py| os_err(py, e)))?
         {
-            names.push(entry.file_name().to_string_lossy().to_string());
+            names.push(osstr_to_string(&entry.file_name()));
         }
 
         Python::attach(|py| {
-            let list = PyList::empty(py);
-            for name in names {
-                list.append(PyString::new(py, &name))?;
-            }
-            Ok(list.unbind())
+            let items: Vec<Py<PyAny>> = names
+                .iter()
+                .map(|name| PyString::new(py, name).into_any().unbind())
+                .collect();
+            Ok(PyList::new(py, &items)?.unbind())
         })
     })
 }
